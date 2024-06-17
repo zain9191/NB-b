@@ -1,6 +1,6 @@
-const User = require('../models/User');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const User = require("../models/User");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
 // Register User
 exports.registerUser = async (req, res) => {
@@ -9,7 +9,7 @@ exports.registerUser = async (req, res) => {
   try {
     let user = await User.findOne({ email });
     if (user) {
-      return res.status(400).json({ msg: 'User already exists' });
+      return res.status(400).json({ msg: "User already exists" });
     }
 
     user = new User({ name, email, password });
@@ -21,15 +21,21 @@ exports.registerUser = async (req, res) => {
 
     const payload = { user: { id: user.id } };
 
-    jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 360000 }, (err, token) => {
-      if (err) throw err;
-      res.json({ token });
-    });
+    jwt.sign(
+      payload,
+      process.env.JWT_SECRET,
+      { expiresIn: "5h" },
+      (err, token) => {
+        if (err) throw err;
+        res.status(201).json({ token });
+      }
+    );
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error("Server error:", err.message);
+    res.status(500).send("Server error");
   }
 };
+
 
 // Login User
 exports.loginUser = async (req, res) => {
@@ -48,12 +54,17 @@ exports.loginUser = async (req, res) => {
 
     const payload = { user: { id: user.id } };
 
-    jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 360000 }, (err, token) => {
-      if (err) throw err;
-      res.json({ token });
-    });
+    jwt.sign(
+      payload,
+      process.env.JWT_SECRET,
+      { expiresIn: '5h' },
+      (err, token) => {
+        if (err) throw err;
+        res.json({ token, user });
+      }
+    );
   } catch (err) {
-    console.error(err.message);
+    console.error('Server error:', err.message);
     res.status(500).send('Server error');
   }
 };

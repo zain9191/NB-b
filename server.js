@@ -3,7 +3,7 @@ const connectDB = require('./config/db');
 const dotenv = require('dotenv');
 const cors = require('cors'); // Import the cors package
 
-dotenv.config();
+require('dotenv').config();
 
 const app = express();
 
@@ -19,8 +19,11 @@ app.use(cors({
 }));
 
 // Define Routes
-app.use('/api/users', require('./routes/user')); // Ensure this matches the file name
-app.use('/api/chefs', require('./routes/chef')); // Ensure this matches the file name
+app.use('/api/users', require('./routes/user')); //  this should matches the file name
+app.use('/api/chefs', require('./routes/chef')); //  this should matches the file name
+
+app.use('/api/profile', require('./routes/profile'));
+
 
 // Error handling middleware
 app.use((err, req, res, next) => {
