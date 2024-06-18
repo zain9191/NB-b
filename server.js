@@ -3,27 +3,36 @@ const connectDB = require('./config/db');
 const dotenv = require('dotenv');
 const cors = require('cors'); // Import the cors package
 
-require('dotenv').config();
+
+
+dotenv.config(); // Load environment variables from .env file
 
 const app = express();
 
-// Connect Database
+// Connect to database
 connectDB();
 
-// Init Middleware
-app.use(express.json({ extended: false }));
+// Middleware
+app.use(express.json()); // Parse JSON bodies
 
-// Enable CORS
+//  origin based on frontend's URL)
 app.use(cors({
-  origin: 'http://localhost:3000' // Specify the frontend URL
+  origin: 'http://localhost:3000'
 }));
 
-// Define Routes
-app.use('/api/users', require('./routes/user')); //  this should matches the file name
-app.use('/api/chefs', require('./routes/chef')); //  this should matches the file name
+// Import routes
+const authRoute = require('./routes/auth');
+const userRoute = require('./routes/user');
+const chefRoute = require('./routes/chef');
+const profileRoute = require('./routes/profile');
+const addressRoute = require('./routes/address');
 
-app.use('/api/profile', require('./routes/profile'));
-
+// Define routes
+app.use('/api/auth', authRoute);
+app.use('/api/users', userRoute); // Keep the old route for users
+app.use('/api/chefs', chefRoute); // Keep the old route for chefs
+app.use('/api/profile', profileRoute); // Keep the old route for profiles
+app.use('/api/address', addressRoute); // New route for addresses
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -31,6 +40,5 @@ app.use((err, req, res, next) => {
   res.status(500).send('Something broke!');
 });
 
-const PORT = process.env.PORT || 5080;
-
+const PORT = process.env.PORT || 5080; // Use the same port as before, or update if needed
 app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
