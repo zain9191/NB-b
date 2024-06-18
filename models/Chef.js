@@ -1,4 +1,3 @@
-// models/Chef.js
 const mongoose = require('mongoose');
 
 const ChefSchema = new mongoose.Schema({
@@ -16,6 +15,14 @@ const ChefSchema = new mongoose.Schema({
     required: true,
   },
   specialty: {
+    type: String,
+    required: true,
+  },
+  phone: {
+    type: String,
+    required: true,
+  },
+  zipCode: {
     type: String,
     required: true,
   },

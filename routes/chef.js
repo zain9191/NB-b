@@ -8,7 +8,7 @@ const bcrypt = require('bcryptjs');
 
 // Register Chef
 router.post('/register', async (req, res) => {
-  const { name, email, password, specialty } = req.body;
+  const { name, email, password, specialty, phone, zipCode } = req.body;
 
   try {
     let chef = await Chef.findOne({ email });
@@ -21,6 +21,8 @@ router.post('/register', async (req, res) => {
       email,
       password,
       specialty,
+      phone,
+      zipCode,
     });
 
     const salt = await bcrypt.genSalt(10);

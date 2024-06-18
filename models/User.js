@@ -1,5 +1,3 @@
-// models/User.js
-
 const mongoose = require("mongoose");
 const jwt = require('jsonwebtoken');
 
@@ -14,6 +12,14 @@ const UserSchema = new mongoose.Schema({
     unique: true,
   },
   password: {
+    type: String,
+    required: true,
+  },
+  phone: {
+    type: String,
+    required: true,
+  },
+  zipCode: {
     type: String,
     required: true,
   },

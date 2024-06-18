@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 
 // Register Chef
 exports.registerChef = async (req, res) => {
-  const { name, email, password, specialty } = req.body;
+  const { name, email, password, specialty, phone, zipCode } = req.body;
 
   try {
     let chef = await Chef.findOne({ email });
@@ -13,7 +13,7 @@ exports.registerChef = async (req, res) => {
       return res.status(400).json({ msg: 'Chef already exists' });
     }
 
-    chef = new Chef({ name, email, password, specialty });
+    chef = new Chef({ name, email, password, specialty, phone, zipCode });
 
     const salt = await bcrypt.genSalt(10);
     chef.password = await bcrypt.hash(password, salt);
