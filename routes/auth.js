@@ -1,3 +1,5 @@
+// routes/auth.js
+
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
@@ -8,7 +10,6 @@ const jwt = require('jsonwebtoken');
 // Register user
 router.post('/register', async (req, res) => {
   const { name, email, password } = req.body;
-
   try {
     let user = await User.findOne({ email });
     if (user) {
@@ -50,6 +51,8 @@ router.post('/register', async (req, res) => {
 // Authenticate user & get token
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
+  console.log(req.body)
+
 
   try {
     let user = await User.findOne({ email });

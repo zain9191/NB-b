@@ -20,14 +20,14 @@ exports.registerChef = async (req, res) => {
 
     await chef.save();
 
-    const payload = { chef: { id: chef.id } };
+    const payload = { chef: { id: chef._id.toString() } };
 
-    jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 360000 }, (err, token) => {
+    jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
       if (err) throw err;
       res.json({ token });
     });
   } catch (err) {
-    console.error(err.message);
+    // console.error(err.message);
     res.status(500).send('Server error');
   }
 };
@@ -47,14 +47,14 @@ exports.loginChef = async (req, res) => {
       return res.status(400).json({ msg: 'Invalid Credentials' });
     }
 
-    const payload = { chef: { id: chef.id } };
+    const payload = { chef: { id: chef._id.toString() } };
 
-    jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 360000 }, (err, token) => {
+    jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
       if (err) throw err;
       res.json({ token });
     });
   } catch (err) {
-    console.error(err.message);
+    // console.error(err.message);
     res.status(500).send('Server error');
   }
 };

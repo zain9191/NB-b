@@ -1,3 +1,6 @@
+// routes/profil.js
+
+
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
@@ -13,7 +16,7 @@ router.get('/', auth, async (req, res) => {
     }
     res.json(user);
   } catch (err) {
-    console.error(err.message);
+    console.error("err.message " + err.message);
     res.status(500).send('Server error');
   }
 });
