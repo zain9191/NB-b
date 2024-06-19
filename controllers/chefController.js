@@ -1,33 +1,32 @@
-// controllers/chefController.js
-const Chef = require('../models/Chef');
-const bcrypt = require('bcryptjs');
+// File: /controllers/chefController.js
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const Chef = require('../models/Chef');
 
 // Register Chef
 exports.registerChef = async (req, res) => {
   const { name, email, password, specialty, phone, zipCode } = req.body;
-
   try {
     let chef = await Chef.findOne({ email });
     if (chef) {
       return res.status(400).json({ msg: 'Chef already exists' });
     }
-
     chef = new Chef({ name, email, password, specialty, phone, zipCode });
-
     const salt = await bcrypt.genSalt(10);
     chef.password = await bcrypt.hash(password, salt);
-
     await chef.save();
 
-    const payload = { chef: { id: chef._id.toString() } };
+    const token = jwt.sign(
+      { user: { id: chef._id.toString(), role: 'chef' } },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
 
-    jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
-      if (err) throw err;
-      res.json({ token });
-    });
+    console.log("Chef registered successfully:", chef);
+    console.log("Generated token:", token);
+    res.status(201).json({ token, chef });
   } catch (err) {
-    // console.error(err.message);
+    console.error('Error during chef registration:', err.message);
     res.status(500).send('Server error');
   }
 };
@@ -47,14 +46,13 @@ exports.loginChef = async (req, res) => {
       return res.status(400).json({ msg: 'Invalid Credentials' });
     }
 
-    const payload = { chef: { id: chef._id.toString() } };
-
-    jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
-      if (err) throw err;
-      res.json({ token });
-    });
+    const payload = { user: { id: chef._id.toString(), role: 'chef' } };
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
+    console.log("Chef logged in successfully:", chef);
+    console.log("Generated token:", token);
+    res.json({ token });
   } catch (err) {
-    // console.error(err.message);
+    console.error('Error during chef login:', err.message);
     res.status(500).send('Server error');
   }
 };

@@ -33,6 +33,7 @@ app.use('/api/users', userRoute); // Keep the old route for users
 app.use('/api/chefs', chefRoute); // Keep the old route for chefs
 app.use('/api/profile', profileRoute); // Keep the old route for profiles
 app.use('/api/address', addressRoute); // New route for addresses
+app.use('/api/meals', require('./routes/meal'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {

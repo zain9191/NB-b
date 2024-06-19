@@ -1,7 +1,7 @@
-// controllers/userController.js
-const User = require('../models/User');
-const bcrypt = require('bcryptjs');
+// File: /controllers/userController.js
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const User = require('../models/User');
 
 // Register User
 exports.registerUser = async (req, res) => {
@@ -20,7 +20,7 @@ exports.registerUser = async (req, res) => {
 
     await user.save();
 
-    const payload = { user: { id: user._id.toString() } };
+    const payload = { user: { id: user._id.toString(), role: 'user' } };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
     res.status(201).json({ token });
   } catch (err) {
@@ -44,7 +44,7 @@ exports.loginUser = async (req, res) => {
       return res.status(400).json({ msg: 'Invalid Credentials' });
     }
 
-    const payload = { user: { id: user._id.toString() } };
+    const payload = { user: { id: user._id.toString(), role: 'user' } };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
     res.json({ token });
   } catch (err) {

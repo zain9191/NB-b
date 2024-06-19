@@ -1,3 +1,4 @@
+// File: /middleware/auth.js
 const jwt = require('jsonwebtoken');
 
 module.exports = function (req, res, next) {
@@ -12,6 +13,7 @@ module.exports = function (req, res, next) {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded.user; 
+    req.user.role = decoded.role; // Add role to the request object
     console.log('Token verification successful:', decoded);
     next();
   } catch (err) {
