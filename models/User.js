@@ -1,4 +1,3 @@
-// models/User.js
 const mongoose = require("mongoose");
 
 const AddressSchema = new mongoose.Schema({
@@ -24,6 +23,14 @@ const UserSchema = new mongoose.Schema({
     type: String,
     default: '/uploads/default-pp.png', // Path to default profile picture
   },
+});
+
+// Pre-save hook to check if profilePicture is empty and set it to the default value
+UserSchema.pre('save', function(next) {
+  if (!this.profilePicture) {
+    this.profilePicture = '/uploads/default-pp.png';
+  }
+  next();
 });
 
 module.exports = mongoose.model("User", UserSchema);

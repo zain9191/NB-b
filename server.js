@@ -22,10 +22,8 @@ app.use(cors({
 // Middleware
 app.use(express.json()); // Parse JSON bodies
 
-// Serve static files from the /uploads directory
+// Serve static files from the /uploads and /assets directories
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Serve static files from the 'assets' directory
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
 // Import routes
@@ -38,11 +36,11 @@ const mealRoute = require('./routes/meal');
 
 // Define routes
 app.use('/api/auth', authRoute);
-app.use('/api/users', userRoute); // Keep the old route for users
-app.use('/api/chefs', chefRoute); // Keep the old route for chefs
-app.use('/api/profile', profileRoute); // New route for profile, including upload functionality
-app.use('/api/address', addressRoute); // New route for addresses
-app.use('/api/meals', mealRoute); // New route for meals
+app.use('/api/users', userRoute);
+app.use('/api/chefs', chefRoute);
+app.use('/api/profile', profileRoute);
+app.use('/api/address', addressRoute);
+app.use('/api/meals', mealRoute);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
