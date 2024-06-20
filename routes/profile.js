@@ -58,7 +58,8 @@ router.post('/upload-profile-picture', auth, (req, res) => {
       if (!user) {
         return res.status(404).json({ msg: 'User not found' });
       }
-      user.profilePicture = `/${uploadsDir}/${req.file.filename}`;
+      // Check if req.file exists, set profile picture accordingly
+      user.profilePicture = req.file ? `/${uploadsDir}/${req.file.filename}` : '/uploads/default-pp.png';
       await user.save();
       res.json(user);
     } catch (err) {

@@ -1,42 +1,16 @@
+// routes/address.js
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const { addAddress, setActiveAddress, deleteAddress } = require('../controllers/addressController');
 
 // Add new address
-router.post('/add', auth, async (req, res) => {
-  try {
-    console.log('Attempting to add new address...');
-    await addAddress(req, res);
-    console.log('Address added successfully');
-  } catch (err) {
-    console.error('Error in adding address:', err.message);
-    res.status(500).send('Server error');
-  }
-});
+router.post('/add', auth, addAddress);
 
 // Set active address
-router.post('/set-active', auth, async (req, res) => {
-  try {
-    console.log('Attempting to set active address...');
-    await setActiveAddress(req, res);
-    console.log('Active address set successfully');
-  } catch (err) {
-    console.error('Error in setting active address:', err.message);
-    res.status(500).send('Server error');
-  }
-});
+router.post('/set-active', auth, setActiveAddress);
 
 // Delete address
-router.delete('/delete/:addressId', auth, async (req, res) => { 
-    try {
-      console.log('Attempting to delete address...');
-      await deleteAddress(req, res);
-      console.log('Address deleted successfully');
-    } catch (err) {
-      console.error('Error in deleting address:', err.message);
-      res.status(500).send('Server error');
-    }
-  });
+router.delete('/delete/:addressId', auth, deleteAddress);
 
 module.exports = router;

@@ -1,33 +1,36 @@
-// File: /controllers/mealController.js
+// controllers/mealController.js
 const Meal = require('../models/Meal');
 
-// Create a new meal
-exports.createMeal = async (req, res) => {
-  const { name, description, price } = req.body;
+exports.createMeal = async (req, res, next) => {
+  const { name, description, price, ingredients } = req.body;
+  const images = req.files.map(file => file.path); // Assume file paths are stored
 
   try {
+    if (req.user.role !== 'chef') {
+      return res.status(403).json({ msg: 'Access denied, only chefs can create meals' });
+    }
+
     const meal = new Meal({
       name,
       description,
       price,
+      ingredients: ingredients.split(','), // Assuming ingredients are sent as a comma-separated string
+      images,
       chef: req.user.id,
     });
 
     await meal.save();
     res.status(201).json(meal);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    next(err);
   }
 };
 
-// Get all meals
-exports.getMeals = async (req, res) => {
+exports.getMeals = async (req, res, next) => {
   try {
     const meals = await Meal.find().populate('chef', 'name');
     res.json(meals);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    next(err);
   }
 };

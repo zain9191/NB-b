@@ -1,4 +1,4 @@
-// File: /models/Meal.js
+// models/Meal.js
 const mongoose = require('mongoose');
 
 const MealSchema = new mongoose.Schema({
@@ -12,6 +12,14 @@ const MealSchema = new mongoose.Schema({
   },
   price: {
     type: Number,
+    required: true,
+  },
+  ingredients: {
+    type: [String],
+    required: true,
+  },
+  images: {
+    type: [String],
     required: true,
   },
   chef: {
