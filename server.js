@@ -29,7 +29,6 @@ app.use('/assets', express.static(path.join(__dirname, 'assets')));
 // Import routes
 const authRoute = require('./routes/auth');
 const userRoute = require('./routes/user');
-const chefRoute = require('./routes/chef');
 const profileRoute = require('./routes/profile');
 const addressRoute = require('./routes/address');
 const mealRoute = require('./routes/meal');
@@ -37,7 +36,6 @@ const mealRoute = require('./routes/meal');
 // Define routes
 app.use('/api/auth', authRoute);
 app.use('/api/users', userRoute);
-app.use('/api/chefs', chefRoute);
 app.use('/api/profile', profileRoute);
 app.use('/api/address', addressRoute);
 app.use('/api/meals', mealRoute);

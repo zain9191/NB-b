@@ -1,4 +1,3 @@
-// Content from /Users/zainfrayha/Desktop/Code/neighbor-s-food-back/models/User.js
 const mongoose = require("mongoose");
 
 const AddressSchema = new mongoose.Schema({
@@ -18,7 +17,6 @@ const UserSchema = new mongoose.Schema({
   zipCode: { type: String, required: true },
   addresses: [AddressSchema],
   activeAddress: AddressSchema,
-  isChef: { type: Boolean, default: false },
   date: { type: Date, default: Date.now },
   profilePicture: {
     type: String,

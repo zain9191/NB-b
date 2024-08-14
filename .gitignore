@@ -1,1 +1,9 @@
+node_modules/
+
+concatFiles.js
+
+output.js
+uploads/
 .env
+node_modules/
+
