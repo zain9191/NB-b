@@ -1,10 +1,8 @@
-// File: /controllers/userController.js
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const Chef = require('../models/Chef'); 
 
-// Register User
 // Register User
 exports.registerUser = async (req, res, next) => {
   const { name, email, password, phone, zipCode, profilePicture } = req.body;
@@ -75,7 +73,7 @@ exports.becomeChef = async (req, res, next) => {
       return res.status(400).json({ msg: 'User is already a chef' });
     }
 
-    // Update the user to become a chef
+    // Update a user to become a chef
     user.isChef = true;
     await user.save();
 

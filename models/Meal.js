@@ -22,9 +22,9 @@ const MealSchema = new mongoose.Schema({
     type: [String],
     required: true,
   },
-  chef: {
+  createdBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Chef',
+    ref: 'User',  // Reference the User model
     required: true,
   },
   date: {
