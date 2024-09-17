@@ -15,10 +15,7 @@ requiredEnvVars.forEach((varName) => {
 const connectDB = async () => {
   try {
     console.log('Connecting to MongoDB...');
-    await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    await mongoose.connect(process.env.MONGO_URI);  // Remove deprecated options
     console.log('MongoDB connected');
   } catch (error) {
     console.error('Error connecting to MongoDB', error);

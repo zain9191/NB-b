@@ -1,27 +1,27 @@
-// routes/profile.js
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const mongoose = require('mongoose'); // Import mongoose for ObjectId usage
 const User = require('../models/User');
 const cors = require('cors');
 
 // Ensure uploads directory exists
 const uploadsDir = 'uploads';
-if (!fs.existsSync(uploadsDir)){
-    fs.mkdirSync(uploadsDir);
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
 }
 
-// Multer configuration
+// Multer configuration for profile picture uploads
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
+  destination: (req, file, cb) => {
     cb(null, uploadsDir);
   },
-  filename: function (req, file, cb) {
+  filename: (req, file, cb) => {
     cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`);
-  }
+  },
 });
 
 const upload = multer({
@@ -37,16 +37,19 @@ const upload = multer({
     } else {
       cb(new Error('Only .png, .jpg and .jpeg format allowed!'));
     }
-  }
+  },
 }).single('profilePicture');
 
-// Add CORS for specific routes if needed
-router.use(cors({
-  origin: 'http://localhost:3000',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+// CORS middleware configuration for specific routes
+router.use(
+  cors({
+    origin: 'http://localhost:3000',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
 
+// Upload Profile Picture Route
 router.post('/upload-profile-picture', auth, (req, res) => {
   upload(req, res, async (err) => {
     if (err) {
@@ -54,13 +57,19 @@ router.post('/upload-profile-picture', auth, (req, res) => {
       return res.status(400).json({ msg: err.message });
     }
     try {
-      const user = await User.findById(req.user.id);
+      // Find the user by MongoDB ObjectId
+      const user = await User.findById(req.user._id);
       if (!user) {
         return res.status(404).json({ msg: 'User not found' });
       }
-      // Check if req.file exists, set profile picture accordingly
-      user.profilePicture = req.file ? `/${uploadsDir}/${req.file.filename}` : '/uploads/default-pp.png';
+
+      // Save profile picture path or use a default one if no file is uploaded
+      user.profile_picture = req.file
+        ? `/${uploadsDir}/${req.file.filename}`
+        : '/uploads/default-pp.png';
       await user.save();
+
+      // Send updated user details
       res.json(user);
     } catch (err) {
       console.error('Error saving user profile picture:', err.message);
@@ -69,10 +78,11 @@ router.post('/upload-profile-picture', auth, (req, res) => {
   });
 });
 
+// Get User Profile Route
 router.get('/', auth, async (req, res) => {
   try {
     console.log('Fetching user profile...');
-    const user = await User.findById(req.user.id).select('-password');
+    const user = await User.findById(req.user._id).select('-password');
     if (!user) {
       console.log('User not found');
       return res.status(404).json({ msg: 'User not found' });
@@ -80,7 +90,7 @@ router.get('/', auth, async (req, res) => {
     console.log('User profile fetched successfully');
     res.json(user);
   } catch (err) {
-    console.error('Error in fetching user profile:', err.message);
+    console.error('Error fetching user profile:', err.message);
     res.status(500).send('Server error');
   }
 });

@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 
 const ChefSchema = new mongoose.Schema({
+  // Removed `chef_id`, relying on the default `_id` field provided by MongoDB
+
   name: {
     type: String,
     required: true,

@@ -5,10 +5,11 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// GET /api/auth
+// GET /api/auth - Fetch the authenticated user's details
 router.get('/', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    // Find the user by MongoDB ObjectId (_id)
+    const user = await User.findById(req.user._id).select('-password').populate('activeAddress'); ;
     if (!user) {
       return res.status(404).json({ msg: 'User not found' });
     }
@@ -19,20 +20,23 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// POST api/auth/register
 // Register user
 router.post('/register', async (req, res) => {
-  const { name, email, password } = req.body;
+  const { full_name, username, email, password, phone_number } = req.body;
   try {
+    // Check if the email is already registered
     let user = await User.findOne({ email });
     if (user) {
       return res.status(400).json({ msg: 'User already exists' });
     }
 
+    // Create a new user (MongoDB automatically assigns _id)
     user = new User({
-      name,
+      full_name,
+      username,
       email,
       password,
+      phone_number,
     });
 
     const salt = await bcrypt.genSalt(10);
@@ -41,7 +45,7 @@ router.post('/register', async (req, res) => {
 
     const payload = {
       user: {
-        id: user.id,
+        _id: user._id, // Use _id for the JWT payload
       },
     };
 
@@ -51,7 +55,14 @@ router.post('/register', async (req, res) => {
       { expiresIn: '5h' },
       (err, token) => {
         if (err) throw err;
-        res.status(201).json({ token });
+        res.status(201).json({
+          token,
+          user: {
+            _id: user._id,
+            full_name: user.full_name,
+            email: user.email,
+          },
+        });
       }
     );
   } catch (err) {
@@ -60,11 +71,9 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// POST api/auth/login
 // Authenticate user & get token
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  console.log(req.body);
 
   try {
     let user = await User.findOne({ email });
@@ -79,18 +88,24 @@ router.post('/login', async (req, res) => {
 
     const payload = {
       user: {
-        id: user.id,
+        _id: user._id, // Use _id for the JWT payload
       },
     };
 
     jwt.sign(
       payload,
       process.env.JWT_SECRET,
-      { expiresIn: '5h' },
+      { expiresIn: '10h' },
       (err, token) => {
         if (err) throw err;
-        // Ensure the token is included in the response
-        res.json({ token, user: { id: user.id, name: user.name, email: user.email } });
+        res.json({
+          token,
+          user: {
+            _id: user._id,
+            full_name: user.full_name,
+            email: user.email,
+          },
+        });
       }
     );
   } catch (err) {

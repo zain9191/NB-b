@@ -40,11 +40,18 @@ app.use('/api/profile', profileRoute);
 app.use('/api/address', addressRoute);
 app.use('/api/meals', mealRoute);
 
-// Error handling middleware
+// Error handling middleware (ensure this comes after all routes)
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).send('Something broke!');
 });
+app._router.stack.forEach((r) => {
+  if (r.route && r.route.path) {
+    console.log(r.route.path);
+  }
+});
 
-const PORT = process.env.PORT || 5080; // Use the same port as before, or update if needed
+
+// Start the server
+const PORT = process.env.PORT || 5080; // Fixed the line break issue
 app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
