@@ -1,14 +1,12 @@
 const Meal = require('../models/Meal');
 
-
-
 exports.createMeal = async (req, res, next) => {
   const {
     name, description, price, ingredients, category, cuisine, portionSize, nutritionalInfo,
     dietaryRestrictions, expirationDate, pickupDeliveryOptions, location, preparationDate,
     packagingInformation, healthSafetyCompliance, contactInformation, paymentOptions,
     preparationMethod, cookingInstructions, additionalNotes, tags, foodSafetyDocumentation,
-    sellerRating, mealId, quantityAvailable, discountsPromotions
+    sellerRating, quantityAvailable, discountsPromotions
   } = req.body;
 
   const images = req.files.map(file => file.path);
@@ -18,9 +16,9 @@ exports.createMeal = async (req, res, next) => {
       name,
       description,
       price,
-      ingredients: ingredients.split(','),  // Ensure ingredients are saved as an array
+      ingredients: ingredients.split(','),  
       images,
-      createdBy: req.user._id,  // Updated field reference
+      createdBy: req.user._id,  
       category,
       cuisine,
       portionSize,
@@ -33,14 +31,13 @@ exports.createMeal = async (req, res, next) => {
       packagingInformation,
       healthSafetyCompliance,
       contactInformation,
-      paymentOptions: paymentOptions.split(','),  // Ensure this is saved as an array
+      paymentOptions: paymentOptions.split(','),  
       preparationMethod,
       cookingInstructions,
       additionalNotes,
-      tags: tags.split(','),  // Ensure this is saved as an array
-      foodSafetyDocumentation: foodSafetyDocumentation.split(','),
+      tags: tags.split(','), 
+      foodSafetyDocumentation: foodSafetyDocumentation ? foodSafetyDocumentation.split(',') : [],
       sellerRating,
-      mealId,
       quantityAvailable,
       discountsPromotions,
       timeListed: new Date(),
@@ -54,16 +51,26 @@ exports.createMeal = async (req, res, next) => {
   }
 };
 
-
-
-
-
 exports.getMeals = async (req, res, next) => {
   try {
-    // Update this line to use createdBy querying by user_id
-    const meals = await Meal.find({ createdBy: req.user._id }).populate('createdBy', 'name email');
+     const meals = await Meal.find().populate('createdBy', 'full_name email');
     res.json(meals);
   } catch (err) {
     next(err);
   }
 };
+
+
+exports.getMealById = async (req, res, next) => {
+  try {
+    const meal = await Meal.findById(req.params.id).populate('createdBy', 'full_name email');
+    if (!meal) {
+      return res.status(404).json({ msg: 'Meal not found' });
+    }
+    res.json(meal);
+  } catch (err) {
+    console.error('Error fetching meal by ID:', err);
+    next(err);
+  }
+};
+// exports.getMealById = getMealById;
