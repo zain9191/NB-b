@@ -1,4 +1,3 @@
-// config/db.js
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 
@@ -15,7 +14,7 @@ requiredEnvVars.forEach((varName) => {
 const connectDB = async () => {
   try {
     console.log('Connecting to MongoDB...');
-    await mongoose.connect(process.env.MONGO_URI);  // Remove deprecated options
+    await mongoose.connect(process.env.MONGO_URI); 
     console.log('MongoDB connected');
   } catch (error) {
     console.error('Error connecting to MongoDB', error);
