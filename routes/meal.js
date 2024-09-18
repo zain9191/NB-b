@@ -12,13 +12,13 @@ const upload = multer({ dest: 'uploads/' });
 router.post('/create', auth, upload.array('images', 5), createMeal);
 
 // Get all meals
-router.get('/', auth, getMeals);
+router.get('/', getMeals);
 
 // Get meals created by the authenticated user
 router.get('/user', auth, getUserMeals);
 
 // Get a specific meal by id
-router.get('/:id', auth, getMealById);
+router.get('/:id', getMealById);
 
 // Update a meal
 router.put('/update/:id', auth, upload.array('images', 5), updateMeal);

@@ -1,4 +1,6 @@
 const Meal = require('../models/Meal');
+const User = require('../models/User');
+
 
 exports.createMeal = async (req, res, next) => {
   const {
@@ -51,14 +53,67 @@ exports.createMeal = async (req, res, next) => {
   }
 };
 
+// Import necessary models
+const Meal = require('../models/Meal');
+const User = require('../models/User');
+
 exports.getMeals = async (req, res, next) => {
   try {
-     const meals = await Meal.find().populate('createdBy', 'full_name email');
+    const query = {};
+
+    // Search by meal name or description
+    if (req.query.search) {
+      query.$or = [
+        { name: { $regex: req.query.search, $options: "i" } },
+        { description: { $regex: req.query.search, $options: "i" } },
+      ];
+    }
+
+    // Filter by cuisine
+    if (req.query.cuisine) {
+      query.cuisine = req.query.cuisine;
+    }
+
+    // Filter by dietary restrictions
+    if (req.query.dietaryRestrictions) {
+      query.dietaryRestrictions = req.query.dietaryRestrictions;
+    }
+
+    // Filter by pickup/delivery options
+    if (req.query.pickupDeliveryOptions) {
+      query.pickupDeliveryOptions = req.query.pickupDeliveryOptions;
+    }
+
+    // Filter by address (assuming city, state, or zipCode)
+    if (req.query.address) {
+      const addressRegex = new RegExp(req.query.address, 'i');
+      query.$or = [
+        { 'location.address': { $regex: addressRegex } },
+        { 'location.city': { $regex: addressRegex } },
+        { 'location.state': { $regex: addressRegex } },
+        { 'location.zipCode': { $regex: addressRegex } },
+      ];
+    }
+    if (req.query.zipCode) {
+      query['location.zipCode'] = req.query.zipCode;
+    }
+
+    // Filter by prepared by (chef's name)
+    if (req.query.preparedBy) {
+      const users = await User.find({
+        full_name: { $regex: req.query.preparedBy, $options: "i" },
+      });
+      const userIds = users.map((user) => user._id);
+      query.createdBy = { $in: userIds };
+    }
+
+    const meals = await Meal.find(query).populate("createdBy", "full_name email");
     res.json(meals);
   } catch (err) {
     next(err);
   }
 };
+
 
 
 exports.getMealById = async (req, res, next) => {
