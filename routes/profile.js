@@ -7,6 +7,8 @@ const fs = require('fs');
 const mongoose = require('mongoose'); // Import mongoose for ObjectId usage
 const User = require('../models/User');
 const cors = require('cors');
+const bcrypt = require('bcryptjs');
+
 
 // Ensure uploads directory exists
 const uploadsDir = 'uploads';
@@ -94,5 +96,29 @@ router.get('/', auth, async (req, res) => {
     res.status(500).send('Server error');
   }
 });
+
+// Change Password Route
+router.put('/change-password', auth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { currentPassword, newPassword } = req.body;
+
+    const user = await User.findById(userId);
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ msg: 'Current password is incorrect.' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    await user.save();
+
+    res.json({ msg: 'Password updated successfully.' });
+  } catch (err) {
+    console.error('Error changing password:', err.message);
+    res.status(500).send('Server error');
+  }
+});
+
 
 module.exports = router;

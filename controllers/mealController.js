@@ -53,10 +53,6 @@ exports.createMeal = async (req, res, next) => {
   }
 };
 
-// Import necessary models
-const Meal = require('../models/Meal');
-const User = require('../models/User');
-
 exports.getMeals = async (req, res, next) => {
   try {
     const query = {};
@@ -68,7 +64,16 @@ exports.getMeals = async (req, res, next) => {
         { description: { $regex: req.query.search, $options: "i" } },
       ];
     }
-
+// Filter by location
+if (req.query.location) {
+  const locationRegex = new RegExp(req.query.location, 'i');
+  query.$or = [
+    { 'location.address': { $regex: locationRegex } },
+    { 'location.city': { $regex: locationRegex } },
+    { 'location.state': { $regex: locationRegex } },
+    { 'location.zipCode': { $regex: locationRegex } },
+  ];
+}
     // Filter by cuisine
     if (req.query.cuisine) {
       query.cuisine = req.query.cuisine;
@@ -113,8 +118,6 @@ exports.getMeals = async (req, res, next) => {
     next(err);
   }
 };
-
-
 
 exports.getMealById = async (req, res, next) => {
   try {
@@ -173,7 +176,6 @@ exports.updateMeal = async (req, res, next) => {
   }
 };
 
-
 exports.getUserMeals = async (req, res, next) => {
   try {
     const meals = await Meal.find({ createdBy: req.user._id });
@@ -184,4 +186,23 @@ exports.getUserMeals = async (req, res, next) => {
   }
 };
 
+exports.getFilterOptions = async (req, res, next) => {
+  try {
+    const categories = await Meal.distinct('category');
+    const cuisines = await Meal.distinct('cuisine');
+    const dietaryRestrictions = await Meal.distinct('dietaryRestrictions');
+    const pickupDeliveryOptions = await Meal.distinct('pickupDeliveryOptions');
+    const paymentOptions = await Meal.distinct('paymentOptions');
 
+    res.json({
+      categories,
+      cuisines,
+      dietaryRestrictions,
+      pickupDeliveryOptions,
+      paymentOptions,
+    });
+  } catch (err) {
+    console.error('Error fetching filter options:', err);
+    res.status(500).json({ error: 'Failed to fetch filter options' });
+  }
+};
