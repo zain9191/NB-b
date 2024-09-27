@@ -20,15 +20,12 @@ const authenticateUser = async (req, res, next) => {
       return res.status(401).json({ message: 'User not found.' });
     }
 
+    // console.log('Authenticated User:', req.user); // Add this line
+
     next();
   } catch (error) {
-    if (error.name === 'TokenExpiredError') {
-      console.warn('Token has expired:', error);
-      res.status(401).json({ message: 'Token expired.' });
-    } else {
-      console.error('Error in authentication middleware:', error);
-      res.status(401).json({ message: 'Invalid token.' });
-    }
+    console.error('Error in authentication middleware:', error);
+    res.status(401).json({ message: 'Invalid token.' });
   }
 };
 

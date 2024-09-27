@@ -79,7 +79,7 @@ exports.loginUser = async (req, res) => {
 // become a Chef
 exports.becomeChef = async (req, res, next) => {
   try {
-    console.log('Converting user to chef with user ID:', req.user._id);
+    // console.log('Converting user to chef with  user ID:', req.user._id);
 
     const user = await User.findById(req.user._id);  // Use MongoDB's ObjectId (_id)
     if (!user) {
@@ -92,11 +92,11 @@ exports.becomeChef = async (req, res, next) => {
       return res.status(400).json({ msg: 'User is already a chef' });
     }
 
-    console.log('Updating user to become a chef');
+    // console.log('Updating user to become a chef');
     user.isChef = true;
     await user.save();
 
-    console.log('Creating new Chef record');
+    // console.log('Creating new Chef record');
     const chef = new Chef({
       name: user.full_name,
       email: user.email,
@@ -112,6 +112,21 @@ exports.becomeChef = async (req, res, next) => {
     res.json({ msg: 'User is now a chef', user, chef });
   } catch (err) {
     console.error('Error converting user to chef:', err.message);
+    res.status(500).send('Server error');
+  }
+};
+
+// getUserProfile
+
+exports.getUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).populate('activeAddress');
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+    res.json(user);
+  } catch (err) {
+    console.error('Error fetching user profile:', err.message);
     res.status(500).send('Server error');
   }
 };
