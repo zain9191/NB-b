@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const Chef = require('../models/Chef');
+const chefSchema = require('../validation/chefValidation.jsx');
 
 // Register User
 exports.registerUser = async (req, res, next) => {
@@ -76,45 +77,59 @@ exports.loginUser = async (req, res) => {
   }
 };
 
-// become a Chef
 exports.becomeChef = async (req, res, next) => {
   try {
-    // console.log('Converting user to chef with  user ID:', req.user._id);
+    // Validate the request body against the schema
+    const { error, value } = chefSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ msg: error.details[0].message });
+    }
 
-    const user = await User.findById(req.user._id);  // Use MongoDB's ObjectId (_id)
+    const { specialty } = value;
+
+    // Fetch the user from the database and populate activeAddress
+    const user = await User.findById(req.user._id).populate('activeAddress');
     if (!user) {
-      console.warn(`User with ID ${req.user._id} not found`);
       return res.status(404).json({ msg: 'User not found' });
     }
 
+    // Check if the user is already a chef
     if (user.isChef) {
-      console.warn(`User with ID ${req.user._id} is already a chef`);
       return res.status(400).json({ msg: 'User is already a chef' });
     }
 
-    // console.log('Updating user to become a chef');
+    // Update the user's isChef flag
     user.isChef = true;
     await user.save();
 
-    // console.log('Creating new Chef record');
+    // Create a Chef profile linked to the User
     const chef = new Chef({
+      user: user._id,
       name: user.full_name,
       email: user.email,
-      password: user.password,
-      specialty: req.body.specialty,
+      specialty: specialty,
       phone: user.phone_number,
-      // zipCode: user.address_id  // Assuming `address_id` refers to the address zip code or similar
+      postalCode: user.activeAddress ? user.activeAddress.postalCode : '',
     });
 
     await chef.save();
 
-    console.log('User successfully converted to chef:', { user, chef });
-    res.json({ msg: 'User is now a chef', user, chef });
+    // Fetch the updated user data
+    const updatedUser = await User.findById(user._id);
+
+    res.status(201).json({ msg: 'User is now a chef', user: updatedUser, chef });
   } catch (err) {
+    // Handle duplicate key error
+    if (err.code === 11000) {
+      return res.status(400).json({ msg: 'Chef profile already exists for this user.' });
+    }
+
     console.error('Error converting user to chef:', err.message);
-    res.status(500).send('Server error');
+    res.status(500).json({ msg: 'Server error' });
   }
 };
+
+
 
 // getUserProfile
 

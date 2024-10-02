@@ -1,8 +1,7 @@
 const mongoose = require('mongoose');
 
 const TransactionSchema = new mongoose.Schema({
-  // Removed `transactionId`, relying on the default `_id` field provided by MongoDB
-
+ 
   meal: { 
     type: mongoose.Schema.Types.ObjectId,  // Use ObjectId for referencing Meal
     ref: 'Meal', 

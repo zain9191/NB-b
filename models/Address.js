@@ -10,10 +10,10 @@ const AddressSchema = new mongoose.Schema(
     },
     street: { type: String, required: true },
     city: { type: String, required: true },
-    state: { type: String }, // Made optional
-    postalCode: { type: String }, // Made optional
+    state: { type: String }, // Optional
+    postalCode: { type: String }, // Optional
     country: { type: String, required: true },
-    formattedAddress: { type: String }, // New field
+    formattedAddress: { type: String },
     location: {
       type: {
         type: String,
@@ -26,6 +26,7 @@ const AddressSchema = new mongoose.Schema(
         required: true,
       },
     },
+    isDeleted: { type: Boolean, default: false }, // Newly added field
   },
   {
     timestamps: true,

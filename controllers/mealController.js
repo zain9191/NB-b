@@ -3,49 +3,99 @@
 const Meal = require('../models/Meal');
 const User = require('../models/User');
 const Address = require('../models/Address');
-const fs = require('fs'); // Required for handling image deletions
+const fs = require('fs'); // For handling image deletions
+const Joi = require('joi');
+const winston = require('winston');
 
-/**
- * Utility function to process fields that can be either strings or arrays.
- * @param {string | Array} field - The field to process.
- * @returns {Array} - An array of trimmed strings.
- */
-const processField = (field) => {
-  if (typeof field === 'string') {
-    return field
-      .split(',')
-      .map(item => item.trim())
-      .filter(item => item); // Removes empty strings
-  } else if (Array.isArray(field)) {
-    return field
-      .map(item => (typeof item === 'string' ? item.trim() : ''))
-      .filter(item => item);
-  } else {
-    return []; // Default to empty array if field is neither string nor array
-  }
-};
+// Configure Winston logger (if not already configured globally)
+const logger = winston.createLogger({
+  level: 'error',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.File({ filename: 'error.log' }),
+    // Add more transports (e.g., Console) if needed
+  ],
+});
 
-/**
- * Utility function to update an existing address with new data.
- * @param {Object} existingAddress - The existing Address document.
- * @param {Object} newAddressData - The new address data to update.
- */
-const updateExistingAddress = async (existingAddress, newAddressData) => {
-  existingAddress.street = newAddressData.street || existingAddress.street;
-  existingAddress.city = newAddressData.city || existingAddress.city;
-  existingAddress.state = newAddressData.state || existingAddress.state;
-  existingAddress.postalCode = newAddressData.postalCode || existingAddress.postalCode;
-  existingAddress.country = newAddressData.country || existingAddress.country;
-  existingAddress.location.coordinates = newAddressData.coordinates || existingAddress.location.coordinates;
+// ============================
+// Joi Validation Schema
+// ============================
 
-  await existingAddress.save();
-};
+const mealSchema = Joi.object({
+  name: Joi.string().min(1).max(255).required(),
+  description: Joi.string().min(1).required(),
+  price: Joi.number().min(0).required(),
+  ingredients: Joi.alternatives().try(
+    Joi.array().items(Joi.string().trim().min(1)),
+    Joi.string().trim().min(1)
+  ).required(),
+  category: Joi.string().min(1).max(100).required(),
+  cuisine: Joi.string().min(1).max(100).required(),
+  portionSize: Joi.string().min(1).max(100).required(),
+  nutritionalInfo: Joi.object({
+    calories: Joi.number().min(0),
+    protein: Joi.number().min(0),
+    fat: Joi.number().min(0),
+    carbs: Joi.number().min(0),
+    vitamins: Joi.alternatives().try(
+      Joi.array().items(Joi.string().trim().min(1)),
+      Joi.string().trim().min(1)
+    ).optional(),
+  }).optional(),
+  dietaryRestrictions: Joi.alternatives().try(
+    Joi.array().items(Joi.string().trim().min(1)),
+    Joi.string().trim().min(1)
+  ).optional(),
+  expirationDate: Joi.date().required(),
+  pickupDeliveryOptions: Joi.alternatives().try(
+    Joi.array().items(Joi.string().trim().min(1)),
+    Joi.string().trim().min(1)
+  ).required(),
+  preparationDate: Joi.date().required(),
+  packagingInformation: Joi.string().allow(''),
+  healthSafetyCompliance: Joi.string().allow(''),
+  contactInformation: Joi.object({
+    email: Joi.string().email(),
+    phone: Joi.string().pattern(/^[0-9]{10,15}$/).message('Please enter a valid phone number.'),
+  }).optional(),
+  paymentOptions: Joi.alternatives().try(
+    Joi.array().items(Joi.string().trim().min(1)),
+    Joi.string().trim().min(1)
+  ).required(),
+  preparationMethod: Joi.string().allow(''),
+  cookingInstructions: Joi.string().allow(''),
+  additionalNotes: Joi.string().allow(''),
+  tags: Joi.alternatives().try(
+    Joi.array().items(Joi.string().trim().min(1)),
+    Joi.string().trim().min(1)
+  ).required(),
+  sellerRating: Joi.number().min(1).max(5).optional(),
+  quantityAvailable: Joi.number().min(1).required(),
+  discountsPromotions: Joi.alternatives().try(
+    Joi.array().items(Joi.string().trim().min(1)),
+    Joi.string().trim().min(1)
+  ).optional(),
+  addressId: Joi.string().regex(/^[0-9a-fA-F]{24}$/).required(),
+});
+
+// ============================
+// Controller Functions
+// ============================
 
 /**
  * Create a new meal
  */
 exports.createMeal = async (req, res) => {
   try {
+    // Validate request body
+    const { error, value } = mealSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ success: false, error: error.details[0].message });
+    }
+
     const {
       name,
       description,
@@ -70,15 +120,15 @@ exports.createMeal = async (req, res) => {
       sellerRating,
       quantityAvailable,
       discountsPromotions,
-      addressId, // Receive addressId from request body
-    } = req.body;
+      addressId,
+    } = value;
 
     let address;
     if (addressId) {
-      // Find the address by addressId and ensure it belongs to the user
-      address = await Address.findOne({ _id: addressId, user_id: req.user._id });
+      // Find the address by addressId and ensure it belongs to the user and is not deleted
+      address = await Address.findOne({ _id: addressId, user_id: req.user._id, isDeleted: false });
       if (!address) {
-        return res.status(404).json({ success: false, error: 'Address not found.' });
+        return res.status(404).json({ success: false, error: 'Address not found or has been deleted.' });
       }
     } else {
       // Fetch the user's active address
@@ -89,66 +139,124 @@ exports.createMeal = async (req, res) => {
       address = user.activeAddress;
     }
 
-    // Create the meal using the selected or active address
+    // Process fields that can be arrays or comma-separated strings
+    const processedIngredients = Array.isArray(ingredients)
+      ? ingredients
+      : ingredients.split(',').map(item => item.trim()).filter(item => item);
+
+    const processedTags = Array.isArray(tags)
+      ? tags
+      : tags.split(',').map(item => item.trim()).filter(item => item);
+
+    const processedDietaryRestrictions = dietaryRestrictions
+      ? (Array.isArray(dietaryRestrictions)
+          ? dietaryRestrictions
+          : dietaryRestrictions.split(',').map(item => item.trim()).filter(item => item))
+      : [];
+
+    const processedPickupDeliveryOptions = Array.isArray(pickupDeliveryOptions)
+      ? pickupDeliveryOptions
+      : pickupDeliveryOptions.split(',').map(item => item.trim()).filter(item => item);
+
+    const processedPaymentOptions = Array.isArray(paymentOptions)
+      ? paymentOptions
+      : paymentOptions.split(',').map(item => item.trim()).filter(item => item);
+
+    const processedDiscountsPromotions = discountsPromotions
+      ? (Array.isArray(discountsPromotions)
+          ? discountsPromotions
+          : discountsPromotions.split(',').map(item => item.trim()).filter(item => item))
+      : [];
+
+    // Parse nutritionalInfo and contactInformation if they are strings
+    const parsedNutritionalInfo = nutritionalInfo
+      ? {
+          calories: nutritionalInfo.calories || 0,
+          protein: nutritionalInfo.protein || 0,
+          fat: nutritionalInfo.fat || 0,
+          carbs: nutritionalInfo.carbs || 0,
+          vitamins: nutritionalInfo.vitamins
+            ? Array.isArray(nutritionalInfo.vitamins)
+              ? nutritionalInfo.vitamins
+              : nutritionalInfo.vitamins.split(',').map(item => item.trim()).filter(item => item)
+            : [],
+        }
+      : {};
+
+    const parsedContactInformation = contactInformation
+      ? {
+          email: contactInformation.email || '',
+          phone: contactInformation.phone || '',
+        }
+      : {};
+
+    // Create the meal instance
     const meal = new Meal({
       name,
       description,
       price,
-      ingredients: Array.isArray(ingredients) ? ingredients : ingredients.split(',').map(item => item.trim()),
+      ingredients: processedIngredients,
       category,
       cuisine,
       portionSize,
-      nutritionalInfo: nutritionalInfo ? JSON.parse(nutritionalInfo) : {},
-      dietaryRestrictions: dietaryRestrictions ? (Array.isArray(dietaryRestrictions) ? dietaryRestrictions : dietaryRestrictions.split(',').map(item => item.trim())) : [],
+      nutritionalInfo: parsedNutritionalInfo,
+      dietaryRestrictions: processedDietaryRestrictions,
       expirationDate,
-      pickupDeliveryOptions: pickupDeliveryOptions ? (Array.isArray(pickupDeliveryOptions) ? pickupDeliveryOptions : pickupDeliveryOptions.split(',').map(item => item.trim())) : [],
+      pickupDeliveryOptions: processedPickupDeliveryOptions,
       preparationDate,
       packagingInformation,
       healthSafetyCompliance,
-      contactInformation: contactInformation ? JSON.parse(contactInformation) : {},
-      paymentOptions: paymentOptions ? (Array.isArray(paymentOptions) ? paymentOptions : paymentOptions.split(',').map(item => item.trim())) : [],
+      contactInformation: parsedContactInformation,
+      paymentOptions: processedPaymentOptions,
       preparationMethod,
       cookingInstructions,
       additionalNotes,
-      tags: tags ? (Array.isArray(tags) ? tags : tags.split(',').map(item => item.trim())) : [],
+      tags: processedTags,
       sellerRating: sellerRating ? parseFloat(sellerRating) : 0,
-      quantityAvailable: quantityAvailable ? parseInt(quantityAvailable, 10) : 0,
-      discountsPromotions: discountsPromotions ? discountsPromotions.split(',').map(item => item.trim()) : [],
+      quantityAvailable: parseInt(quantityAvailable, 10),
+      discountsPromotions: processedDiscountsPromotions,
       images: req.files.map((file) => file.path),
       createdBy: req.user._id,
-      address: address._id, // Associate with the selected address
+      address: address._id,
     });
 
     await meal.save();
 
+    // Respond with the newly created meal
     res.status(201).json({ success: true, data: meal });
   } catch (error) {
-    console.error("Error creating meal:", error);
-    res.status(500).json({ success: false, error: "Failed to create meal." });
+    if (error.code === 11000) {
+      // Duplicate key error
+      return res.status(409).json({ success: false, message: 'The meal is already registered.' });
+    }
+    logger.error(`Error creating meal: ${error.message}`, { stack: error.stack });
+    res.status(500).json({ success: false, error: 'Server error' });
   }
 };
 
 /**
  * Update an existing meal
  */
-exports.updateMeal = async (req, res, next) => {
+exports.updateMeal = async (req, res) => {
   const mealId = req.params.id;
   const userId = req.user._id;
 
   try {
+    // Find the meal by ID
     const meal = await Meal.findById(mealId);
-
     if (!meal) {
       return res.status(404).json({ success: false, msg: 'Meal not found' });
     }
 
+    // Check if the authenticated user is the creator of the meal
     if (meal.createdBy.toString() !== userId.toString()) {
       return res.status(403).json({ success: false, msg: 'You are not authorized to edit this meal' });
     }
 
-    // Prevent updating the 'createdBy' field
-    if (req.body.createdBy) {
-      delete req.body.createdBy;
+    // Validate request body
+    const { error, value } = mealSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ success: false, error: error.details[0].message });
     }
 
     const {
@@ -175,15 +283,15 @@ exports.updateMeal = async (req, res, next) => {
       sellerRating,
       quantityAvailable,
       discountsPromotions,
-      addressId, // Receive addressId from request body
-    } = req.body;
+      addressId,
+    } = value;
 
     let address;
     if (addressId) {
-      // Find the new address by addressId and ensure it belongs to the user
-      address = await Address.findOne({ _id: addressId, user_id: userId });
+      // Find the new address by addressId and ensure it belongs to the user and is not deleted
+      address = await Address.findOne({ _id: addressId, user_id: userId, isDeleted: false });
       if (!address) {
-        return res.status(404).json({ success: false, error: 'Address not found.' });
+        return res.status(404).json({ success: false, error: 'Address not found or has been deleted.' });
       }
     } else {
       // Retain the existing address
@@ -193,62 +301,83 @@ exports.updateMeal = async (req, res, next) => {
       }
     }
 
+    // Process fields that can be arrays or comma-separated strings
+    const processedIngredients = Array.isArray(ingredients)
+      ? ingredients
+      : ingredients.split(',').map(item => item.trim()).filter(item => item);
+
+    const processedTags = Array.isArray(tags)
+      ? tags
+      : tags.split(',').map(item => item.trim()).filter(item => item);
+
+    const processedDietaryRestrictions = dietaryRestrictions
+      ? (Array.isArray(dietaryRestrictions)
+          ? dietaryRestrictions
+          : dietaryRestrictions.split(',').map(item => item.trim()).filter(item => item))
+      : [];
+
+    const processedPickupDeliveryOptions = Array.isArray(pickupDeliveryOptions)
+      ? pickupDeliveryOptions
+      : pickupDeliveryOptions.split(',').map(item => item.trim()).filter(item => item);
+
+    const processedPaymentOptions = Array.isArray(paymentOptions)
+      ? paymentOptions
+      : paymentOptions.split(',').map(item => item.trim()).filter(item => item);
+
+    const processedDiscountsPromotions = discountsPromotions
+      ? (Array.isArray(discountsPromotions)
+          ? discountsPromotions
+          : discountsPromotions.split(',').map(item => item.trim()).filter(item => item))
+      : [];
+
+    // Parse nutritionalInfo and contactInformation if they are strings
+    const parsedNutritionalInfo = nutritionalInfo
+      ? {
+          calories: nutritionalInfo.calories || 0,
+          protein: nutritionalInfo.protein || 0,
+          fat: nutritionalInfo.fat || 0,
+          carbs: nutritionalInfo.carbs || 0,
+          vitamins: nutritionalInfo.vitamins
+            ? Array.isArray(nutritionalInfo.vitamins)
+              ? nutritionalInfo.vitamins
+              : nutritionalInfo.vitamins.split(',').map(item => item.trim()).filter(item => item)
+            : [],
+        }
+      : {};
+
+    const parsedContactInformation = contactInformation
+      ? {
+          email: contactInformation.email || '',
+          phone: contactInformation.phone || '',
+        }
+      : {};
+
     // Prepare update data
     const updatedData = {
       name: name || meal.name,
       description: description || meal.description,
       price: price !== undefined ? price : meal.price,
-      ingredients: ingredients
-        ? Array.isArray(ingredients)
-          ? ingredients
-          : ingredients.split(',').map(item => item.trim())
-        : meal.ingredients,
+      ingredients: processedIngredients,
       category: category || meal.category,
       cuisine: cuisine || meal.cuisine,
       portionSize: portionSize || meal.portionSize,
-      nutritionalInfo: nutritionalInfo
-        ? JSON.parse(nutritionalInfo)
-        : meal.nutritionalInfo,
-      dietaryRestrictions: dietaryRestrictions
-        ? Array.isArray(dietaryRestrictions)
-          ? dietaryRestrictions
-          : dietaryRestrictions.split(',').map(item => item.trim())
-        : meal.dietaryRestrictions,
+      nutritionalInfo: parsedNutritionalInfo,
+      dietaryRestrictions: processedDietaryRestrictions,
       expirationDate: expirationDate || meal.expirationDate,
-      pickupDeliveryOptions: pickupDeliveryOptions
-        ? Array.isArray(pickupDeliveryOptions)
-          ? pickupDeliveryOptions
-          : pickupDeliveryOptions.split(',').map(item => item.trim())
-        : meal.pickupDeliveryOptions,
+      pickupDeliveryOptions: processedPickupDeliveryOptions,
       preparationDate: preparationDate || meal.preparationDate,
-      packagingInformation: packagingInformation || meal.packagingInformation,
-      healthSafetyCompliance: healthSafetyCompliance || meal.healthSafetyCompliance,
-      contactInformation: contactInformation
-        ? JSON.parse(contactInformation)
-        : meal.contactInformation,
-      paymentOptions: paymentOptions
-        ? Array.isArray(paymentOptions)
-          ? paymentOptions
-          : paymentOptions.split(',').map(item => item.trim())
-        : meal.paymentOptions,
+      packagingInformation,
+      healthSafetyCompliance,
+      contactInformation: parsedContactInformation,
+      paymentOptions: processedPaymentOptions,
       preparationMethod: preparationMethod || meal.preparationMethod,
       cookingInstructions: cookingInstructions || meal.cookingInstructions,
       additionalNotes: additionalNotes || meal.additionalNotes,
-      tags: tags
-        ? Array.isArray(tags)
-          ? tags
-          : tags.split(',').map(item => item.trim())
-        : meal.tags,
-      sellerRating:
-        sellerRating !== undefined ? parseFloat(sellerRating) : meal.sellerRating,
-      quantityAvailable:
-        quantityAvailable !== undefined
-          ? parseInt(quantityAvailable, 10)
-          : meal.quantityAvailable,
-      discountsPromotions: discountsPromotions
-        ? discountsPromotions.split(',').map(item => item.trim())
-        : meal.discountsPromotions,
-      address: address._id, // Update address association
+      tags: processedTags,
+      sellerRating: sellerRating ? parseFloat(sellerRating) : meal.sellerRating,
+      quantityAvailable: parseInt(quantityAvailable, 10),
+      discountsPromotions: processedDiscountsPromotions,
+      address: address._id,
     };
 
     // Handle images if new images are uploaded
@@ -256,30 +385,34 @@ exports.updateMeal = async (req, res, next) => {
       // Delete old images from the filesystem to prevent orphaned files
       meal.images.forEach((imgPath) => {
         fs.unlink(imgPath, (err) => {
-          if (err) console.error(`Failed to delete image ${imgPath}:`, err);
+          if (err) logger.error(`Failed to delete image ${imgPath}: ${err.message}`);
         });
       });
       updatedData.images = req.files.map((file) => file.path);
     }
 
-    // Update the meal
+    // Update the meal in the database
     const updatedMeal = await Meal.findByIdAndUpdate(
       mealId,
       { $set: updatedData },
-      { new: true }
+      { new: true, runValidators: true }
     )
       .populate("createdBy", "full_name email")
       .populate("address");
 
     res.json({ success: true, data: updatedMeal });
-  } catch (err) {
-    console.error('Error updating meal:', err);
-    res.status(500).json({ success: false, error: 'Server Error' });
+  } catch (error) {
+    if (error.code === 11000) {
+      // Duplicate key error
+      return res.status(409).json({ success: false, message: 'The updated meal conflicts with an existing meal.' });
+    }
+    logger.error(`Error updating meal: ${error.message}`, { stack: error.stack });
+    res.status(500).json({ success: false, error: 'Server error' });
   }
 };
 
 /**
- * Get meals with filtering and geospatial search
+ * Get all meals with filtering and pagination
  */
 exports.getMeals = async (req, res, next) => {
   try {
@@ -292,120 +425,253 @@ exports.getMeals = async (req, res, next) => {
       city,
       state,
       postalCode,
-      // Removed lat, lng, and address
+      lat,
+      lng,
+      radius,
+      page = 1,
+      limit = 10,
       ...otherFilters
     } = req.query;
 
-    let query = {};
+    let matchConditions = {};
 
-    // Search by meal name or description
+    // Build matchConditions based on filters
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
+      matchConditions.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
       ];
     }
 
-    // Filter by cuisine
     if (cuisine) {
-      query.cuisine = cuisine;
+      matchConditions.cuisine = cuisine;
     }
 
-    // Filter by dietary restrictions
     if (dietaryRestrictions) {
-      query.dietaryRestrictions = dietaryRestrictions;
+      const dietaryArray = Array.isArray(dietaryRestrictions)
+        ? dietaryRestrictions
+        : dietaryRestrictions.split(',').map(item => item.trim()).filter(item => item);
+      matchConditions.dietaryRestrictions = { $all: dietaryArray };
     }
 
-    // Filter by pickup/delivery options
     if (pickupDeliveryOptions) {
-      query.pickupDeliveryOptions = pickupDeliveryOptions;
+      const pickupArray = Array.isArray(pickupDeliveryOptions)
+        ? pickupDeliveryOptions
+        : pickupDeliveryOptions.split(',').map(item => item.trim()).filter(item => item);
+      matchConditions.pickupDeliveryOptions = { $all: pickupArray };
     }
 
-    // Filter by prepared by (chef's name)
     if (preparedBy) {
       const users = await User.find({
-        full_name: { $regex: preparedBy, $options: "i" },
-      });
+        full_name: { $regex: preparedBy, $options: 'i' },
+      }).select('_id');
       const userIds = users.map((user) => user._id);
-      query.createdBy = { $in: userIds };
+      matchConditions.createdBy = { $in: userIds };
     }
 
-    // Filter by address components (city, state, postalCode)
-    if (city || state || postalCode) {
-      query = {
-        ...query,
-        'address': {
-          $exists: true,
-        },
-      };
-    }
-
-    // Apply any additional filters from otherFilters
-    Object.keys(otherFilters).forEach(key => {
-      query[key] = otherFilters[key];
+    // Additional filters from otherFilters
+    Object.keys(otherFilters).forEach((key) => {
+      matchConditions[key] = otherFilters[key];
     });
 
-    const meals = await Meal.find(query)
-      .populate({
-        path: 'address',
-        match: {
-          ...(city && { city: new RegExp(city, 'i') }),
-          ...(state && { state: new RegExp(state, 'i') }),
-          ...(postalCode && { postalCode: new RegExp(postalCode, 'i') }),
+    // Geospatial filtering
+    if (lat && lng && radius) {
+      const radiusInRadians = parseFloat(radius) / 6378137; // Earth's radius in meters
+
+      // Find addresses within the radius
+      const addressesWithinRadius = await Address.find({
+        location: {
+          $geoWithin: {
+            $centerSphere: [
+              [parseFloat(lng), parseFloat(lat)],
+              radiusInRadians,
+            ],
+          },
         },
-      })
-      .populate('createdBy', 'full_name email');
+      }).select('_id');
 
-    // Filter out meals where the address didn't match the populated criteria
-    const filteredMeals = meals.filter(meal => meal.address);
+      const addressIds = addressesWithinRadius.map(address => address._id);
 
-    res.json(filteredMeals);
-  } catch (err) {
-    console.error('Error fetching meals:', err);
-    next(err);
+      // Add addressIds to matchConditions
+      matchConditions.address = { $in: addressIds };
+    } else if (city || state || postalCode) {
+      let addressMatch = {};
+      if (city) addressMatch.city = { $regex: new RegExp(city, 'i') };
+      if (state) addressMatch.state = { $regex: new RegExp(state, 'i') };
+      if (postalCode) addressMatch.postalCode = { $regex: new RegExp(postalCode, 'i') };
+
+      // Find addresses matching the criteria
+      const addresses = await Address.find(addressMatch).select('_id');
+      const addressIds = addresses.map(address => address._id);
+
+      if (addressIds.length > 0) {
+        matchConditions.address = { $in: addressIds };
+      } else {
+        // No addresses match, so return empty result
+        return res.json({
+          success: true,
+          data: [],
+          pagination: {
+            total: 0,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: 0,
+          },
+        });
+      }
+    }
+
+    // Initialize aggregation pipeline
+    let pipeline = [];
+
+    // Apply matchConditions
+    if (Object.keys(matchConditions).length > 0) {
+      pipeline.push({ $match: matchConditions });
+    }
+
+    // Lookup Address details
+    pipeline.push({
+      $lookup: {
+        from: 'addresses',
+        localField: 'address',
+        foreignField: '_id',
+        as: 'addressDetails',
+      },
+    });
+
+    // Unwind the addressDetails array
+    pipeline.push({ $unwind: '$addressDetails' });
+
+    // Lookup createdBy details
+    pipeline.push({
+      $lookup: {
+        from: 'users',
+        localField: 'createdBy',
+        foreignField: '_id',
+        as: 'createdByDetails',
+      },
+    });
+
+    pipeline.push({ $unwind: '$createdByDetails' });
+
+    // Project desired fields
+    pipeline.push({
+      $project: {
+        name: 1,
+        description: 1,
+        price: 1,
+        ingredients: 1,
+        category: 1,
+        cuisine: 1,
+        portionSize: 1,
+        nutritionalInfo: 1,
+        dietaryRestrictions: 1,
+        expirationDate: 1,
+        pickupDeliveryOptions: 1,
+        preparationDate: 1,
+        packagingInformation: 1,
+        healthSafetyCompliance: 1,
+        contactInformation: 1,
+        paymentOptions: 1,
+        preparationMethod: 1,
+        cookingInstructions: 1,
+        additionalNotes: 1,
+        tags: 1,
+        sellerRating: 1,
+        quantityAvailable: 1,
+        discountsPromotions: 1,
+        images: 1,
+        createdBy: {
+          _id: '$createdByDetails._id',
+          full_name: '$createdByDetails.full_name',
+          email: '$createdByDetails.email',
+        },
+        address: '$addressDetails',
+      },
+    });
+
+    // Pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    pipeline.push({ $skip: skip });
+    pipeline.push({ $limit: parseInt(limit) });
+
+    // Execute aggregation
+    const meals = await Meal.aggregate(pipeline);
+
+    // Get total count for pagination
+    const totalPipeline = [...pipeline];
+    // Remove pagination stages
+    totalPipeline.pop(); // $limit
+    totalPipeline.pop(); // $skip
+    // Add a count stage
+    totalPipeline.push({
+      $count: 'total',
+    });
+    const totalResult = await Meal.aggregate(totalPipeline);
+    const total = totalResult[0] ? totalResult[0].total : 0;
+    const totalPages = Math.ceil(total / parseInt(limit));
+
+    res.json({
+      success: true,
+      data: meals,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages,
+      },
+    });
+  } catch (error) {
+    logger.error(`Error fetching meals: ${error.message}`, { stack: error.stack });
+    res.status(500).json({ success: false, error: 'Server error' });
   }
 };
 
 /**
  * Get a meal by its ID
  */
-exports.getMealById = async (req, res, next) => {
+exports.getMealById = async (req, res) => {
   try {
     const meal = await Meal.findById(req.params.id)
-      .populate('createdBy', 'full_name email')
-      .populate('address'); // Ensure address is populated
+      .populate('createdBy', 'full_name email _id') // Include _id for user identification
+      .populate({
+        path: 'address',
+        select: 'formattedAddress location', // Select necessary address fields
+      })
+      .exec();
 
     if (!meal) {
       return res.status(404).json({ success: false, msg: 'Meal not found' });
     }
+
     res.json({ success: true, data: meal });
-  } catch (err) {
-    console.error('Error fetching meal by ID:', err);
-    next(err);
+  } catch (error) {
+    logger.error(`Error fetching meal by ID: ${error.message}`, { stack: error.stack });
+    res.status(500).json({ success: false, error: 'Server error' });
   }
 };
 
-
 /**
- * Get meals created by the authenticated user
+ * Get all meals created by the authenticated user
  */
-exports.getUserMeals = async (req, res, next) => {
+exports.getUserMeals = async (req, res) => {
   try {
     const meals = await Meal.find({ createdBy: req.user._id })
       .populate("createdBy", "full_name email")
-      .populate('address'); // Populate address data
+      .populate('address')
+      .exec();
 
     res.json({ success: true, data: meals });
-  } catch (err) {
-    console.error('Error fetching user meals:', err);
-    next(err);
+  } catch (error) {
+    logger.error(`Error fetching user meals: ${error.message}`, { stack: error.stack });
+    res.status(500).json({ success: false, error: 'Server error' });
   }
 };
 
 /**
  * Get filter options for categories, cuisines, etc.
  */
-exports.getFilterOptions = async (req, res, next) => {
+exports.getFilterOptions = async (req, res) => {
   try {
     const categories = await Meal.distinct('category');
     const cuisines = await Meal.distinct('cuisine');
@@ -423,12 +689,15 @@ exports.getFilterOptions = async (req, res, next) => {
         paymentOptions,
       },
     });
-  } catch (err) {
-    console.error('Error fetching filter options:', err);
+  } catch (error) {
+    logger.error(`Error fetching filter options: ${error.message}`, { stack: error.stack });
     res.status(500).json({ success: false, error: 'Failed to fetch filter options' });
   }
 };
 
+/**
+ * Delete a meal (Hard Delete)
+ */
 exports.deleteMeal = async (req, res) => {
   const mealId = req.params.id;
   const userId = req.user._id;
@@ -444,14 +713,14 @@ exports.deleteMeal = async (req, res) => {
     meal.images.forEach((imgPath) => {
       fs.unlink(imgPath, (err) => {
         if (err) {
-          console.error(`Failed to delete image ${imgPath}:`, err);
+          logger.error(`Failed to delete image ${imgPath}: ${err.message}`);
         }
       });
     });
 
     res.json({ success: true, msg: 'Meal deleted successfully' });
   } catch (error) {
-    console.error('Error deleting meal:', error);
-    res.status(500).json({ success: false, msg: 'Server Error' });
+    logger.error(`Error deleting meal: ${error.message}`, { stack: error.stack });
+    res.status(500).json({ success: false, error: 'Server error' });
   }
 };

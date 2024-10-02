@@ -1,8 +1,12 @@
 const mongoose = require('mongoose');
 
 const ChefSchema = new mongoose.Schema({
-  // Removed `chef_id`, relying on the default `_id` field provided by MongoDB
-
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    unique: true, // Ensures one-to-one relationship
+  },
   name: {
     type: String,
     required: true,
@@ -11,10 +15,6 @@ const ChefSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
-  },
-  password: {
-    type: String,
-    required: true,
   },
   specialty: {
     type: String,
