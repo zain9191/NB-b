@@ -1,5 +1,4 @@
-// validation/chefValidation.jsx
-
+ 
 const Joi = require("joi");
 
 const chefSchema = Joi.object({

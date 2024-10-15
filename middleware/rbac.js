@@ -4,5 +4,5 @@
       return res.status(403).json({ msg: 'Access denied' });
     }
   }
-   next();
+  next();
 };

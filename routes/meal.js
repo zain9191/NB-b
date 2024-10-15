@@ -1,34 +1,34 @@
+ 
 const express = require('express');
 const router = express.Router();
+const mealController = require('../controllers/mealController');
+const validateMeal = require('../middleware/validateMeal');
 const multer = require('multer');
 const auth = require('../middleware/auth');
 const rbac = require('../middleware/rbac');
-const {
-  createMeal,
-  getMeals,
-  getMealById,
-  updateMeal,
-  getUserMeals,
-  getFilterOptions,
-  deleteMeal,
-} = require('../controllers/mealController');
 
 // Configure multer for file uploads
 const upload = multer({ dest: 'uploads/' });
 
-// Static Routes
-router.get('/user', auth, getUserMeals);
-router.get('/filters', getFilterOptions);
+// Create a new meal
+router.post('/meals', auth, rbac('chef'), upload.array('images', 5), validateMeal, mealController.createMeal);
 
-// **RESTful Route for Creating a Meal**
-router.post('/', auth, rbac('chef'), upload.array('images', 5), createMeal);
-
-// **Dynamic Routes**
-router.get('/:id', getMealById);
-router.put('/:id', auth, rbac('chef'), upload.array('images', 5), updateMeal);
-router.delete('/:id', auth, rbac('chef'), deleteMeal);
+// Update an existing meal
+router.put('/meals/:id', auth, rbac('chef'), upload.array('images', 5), validateMeal, mealController.updateMeal);
 
 // Get all meals
-router.get('/', getMeals);
+router.get('/meals', mealController.getMeals);
+
+// Get a specific meal by ID
+router.get('/meals/:id', mealController.getMealById);
+
+// Delete a meal
+router.delete('/meals/:id', auth, rbac('chef'), mealController.deleteMeal);
+
+// Get meals for a specific user
+router.get('/meals/user', auth, mealController.getUserMeals);
+
+// Get filter options for meals
+router.get('/meals/filters', mealController.getFilterOptions);
 
 module.exports = router;

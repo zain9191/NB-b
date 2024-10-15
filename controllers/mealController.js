@@ -3,9 +3,15 @@
 const Meal = require('../models/Meal');
 const User = require('../models/User');
 const Address = require('../models/Address');
-const fs = require('fs'); // For handling image deletions
-const Joi = require('joi');
+const fs = require('fs').promises; // Use promises for file operations
 const winston = require('winston');
+
+// Import helper functions
+const { processMealData } = require('../helpers/mealDataProcessor');
+const { getAddress } = require('../helpers/addressHelper');
+
+// Import validation schema
+const mealSchema = require('../validation/mealSchema');
 
 // Configure Winston logger (if not already configured globally)
 const logger = winston.createLogger({
@@ -21,67 +27,6 @@ const logger = winston.createLogger({
 });
 
 // ============================
-// Joi Validation Schema
-// ============================
-
-const mealSchema = Joi.object({
-  name: Joi.string().min(1).max(255).required(),
-  description: Joi.string().min(1).required(),
-  price: Joi.number().min(0).required(),
-  ingredients: Joi.alternatives().try(
-    Joi.array().items(Joi.string().trim().min(1)),
-    Joi.string().trim().min(1)
-  ).required(),
-  category: Joi.string().min(1).max(100).required(),
-  cuisine: Joi.string().min(1).max(100).required(),
-  portionSize: Joi.string().min(1).max(100).required(),
-  nutritionalInfo: Joi.object({
-    calories: Joi.number().min(0),
-    protein: Joi.number().min(0),
-    fat: Joi.number().min(0),
-    carbs: Joi.number().min(0),
-    vitamins: Joi.alternatives().try(
-      Joi.array().items(Joi.string().trim().min(1)),
-      Joi.string().trim().min(1)
-    ).optional(),
-  }).optional(),
-  dietaryRestrictions: Joi.alternatives().try(
-    Joi.array().items(Joi.string().trim().min(1)),
-    Joi.string().trim().min(1)
-  ).optional(),
-  expirationDate: Joi.date().required(),
-  pickupDeliveryOptions: Joi.alternatives().try(
-    Joi.array().items(Joi.string().trim().min(1)),
-    Joi.string().trim().min(1)
-  ).required(),
-  preparationDate: Joi.date().required(),
-  packagingInformation: Joi.string().allow(''),
-  healthSafetyCompliance: Joi.string().allow(''),
-  contactInformation: Joi.object({
-    email: Joi.string().email(),
-    phone: Joi.string().pattern(/^[0-9]{10,15}$/).message('Please enter a valid phone number.'),
-  }).optional(),
-  paymentOptions: Joi.alternatives().try(
-    Joi.array().items(Joi.string().trim().min(1)),
-    Joi.string().trim().min(1)
-  ).required(),
-  preparationMethod: Joi.string().allow(''),
-  cookingInstructions: Joi.string().allow(''),
-  additionalNotes: Joi.string().allow(''),
-  tags: Joi.alternatives().try(
-    Joi.array().items(Joi.string().trim().min(1)),
-    Joi.string().trim().min(1)
-  ).required(),
-  sellerRating: Joi.number().min(1).max(5).optional(),
-  quantityAvailable: Joi.number().min(1).required(),
-  discountsPromotions: Joi.alternatives().try(
-    Joi.array().items(Joi.string().trim().min(1)),
-    Joi.string().trim().min(1)
-  ).optional(),
-  addressId: Joi.string().regex(/^[0-9a-fA-F]{24}$/).required(),
-});
-
-// ============================
 // Controller Functions
 // ============================
 
@@ -93,129 +38,21 @@ exports.createMeal = async (req, res) => {
     // Validate request body
     const { error, value } = mealSchema.validate(req.body);
     if (error) {
-      return res.status(400).json({ success: false, error: error.details[0].message });
+      return res
+        .status(400)
+        .json({ success: false, error: error.details[0].message });
     }
 
-    const {
-      name,
-      description,
-      price,
-      ingredients,
-      category,
-      cuisine,
-      portionSize,
-      nutritionalInfo,
-      dietaryRestrictions,
-      expirationDate,
-      pickupDeliveryOptions,
-      preparationDate,
-      packagingInformation,
-      healthSafetyCompliance,
-      contactInformation,
-      paymentOptions,
-      preparationMethod,
-      cookingInstructions,
-      additionalNotes,
-      tags,
-      sellerRating,
-      quantityAvailable,
-      discountsPromotions,
-      addressId,
-    } = value;
+    // Process meal data
+    const processedData = processMealData(value);
 
-    let address;
-    if (addressId) {
-      // Find the address by addressId and ensure it belongs to the user and is not deleted
-      address = await Address.findOne({ _id: addressId, user_id: req.user._id, isDeleted: false });
-      if (!address) {
-        return res.status(404).json({ success: false, error: 'Address not found or has been deleted.' });
-      }
-    } else {
-      // Fetch the user's active address
-      const user = await User.findById(req.user._id).populate('activeAddress');
-      if (!user || !user.activeAddress) {
-        return res.status(400).json({ success: false, error: 'Active address not set for user.' });
-      }
-      address = user.activeAddress;
-    }
-
-    // Process fields that can be arrays or comma-separated strings
-    const processedIngredients = Array.isArray(ingredients)
-      ? ingredients
-      : ingredients.split(',').map(item => item.trim()).filter(item => item);
-
-    const processedTags = Array.isArray(tags)
-      ? tags
-      : tags.split(',').map(item => item.trim()).filter(item => item);
-
-    const processedDietaryRestrictions = dietaryRestrictions
-      ? (Array.isArray(dietaryRestrictions)
-          ? dietaryRestrictions
-          : dietaryRestrictions.split(',').map(item => item.trim()).filter(item => item))
-      : [];
-
-    const processedPickupDeliveryOptions = Array.isArray(pickupDeliveryOptions)
-      ? pickupDeliveryOptions
-      : pickupDeliveryOptions.split(',').map(item => item.trim()).filter(item => item);
-
-    const processedPaymentOptions = Array.isArray(paymentOptions)
-      ? paymentOptions
-      : paymentOptions.split(',').map(item => item.trim()).filter(item => item);
-
-    const processedDiscountsPromotions = discountsPromotions
-      ? (Array.isArray(discountsPromotions)
-          ? discountsPromotions
-          : discountsPromotions.split(',').map(item => item.trim()).filter(item => item))
-      : [];
-
-    // Parse nutritionalInfo and contactInformation if they are strings
-    const parsedNutritionalInfo = nutritionalInfo
-      ? {
-          calories: nutritionalInfo.calories || 0,
-          protein: nutritionalInfo.protein || 0,
-          fat: nutritionalInfo.fat || 0,
-          carbs: nutritionalInfo.carbs || 0,
-          vitamins: nutritionalInfo.vitamins
-            ? Array.isArray(nutritionalInfo.vitamins)
-              ? nutritionalInfo.vitamins
-              : nutritionalInfo.vitamins.split(',').map(item => item.trim()).filter(item => item)
-            : [],
-        }
-      : {};
-
-    const parsedContactInformation = contactInformation
-      ? {
-          email: contactInformation.email || '',
-          phone: contactInformation.phone || '',
-        }
-      : {};
+    // Get address
+    const address = await getAddress(value.addressId, req.user._id);
 
     // Create the meal instance
     const meal = new Meal({
-      name,
-      description,
-      price,
-      ingredients: processedIngredients,
-      category,
-      cuisine,
-      portionSize,
-      nutritionalInfo: parsedNutritionalInfo,
-      dietaryRestrictions: processedDietaryRestrictions,
-      expirationDate,
-      pickupDeliveryOptions: processedPickupDeliveryOptions,
-      preparationDate,
-      packagingInformation,
-      healthSafetyCompliance,
-      contactInformation: parsedContactInformation,
-      paymentOptions: processedPaymentOptions,
-      preparationMethod,
-      cookingInstructions,
-      additionalNotes,
-      tags: processedTags,
-      sellerRating: sellerRating ? parseFloat(sellerRating) : 0,
-      quantityAvailable: parseInt(quantityAvailable, 10),
-      discountsPromotions: processedDiscountsPromotions,
-      images: req.files.map((file) => file.path),
+      ...processedData,
+      images: req.files ? req.files.map((file) => file.path) : [],
       createdBy: req.user._id,
       address: address._id,
     });
@@ -225,11 +62,13 @@ exports.createMeal = async (req, res) => {
     // Respond with the newly created meal
     res.status(201).json({ success: true, data: meal });
   } catch (error) {
-    if (error.code === 11000) {
-      // Duplicate key error
-      return res.status(409).json({ success: false, message: 'The meal is already registered.' });
-    }
     logger.error(`Error creating meal: ${error.message}`, { stack: error.stack });
+    if (
+      error.message.includes('Address not found') ||
+      error.message.includes('Active address not set')
+    ) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
     res.status(500).json({ success: false, error: 'Server error' });
   }
 };
@@ -250,144 +89,45 @@ exports.updateMeal = async (req, res) => {
 
     // Check if the authenticated user is the creator of the meal
     if (meal.createdBy.toString() !== userId.toString()) {
-      return res.status(403).json({ success: false, msg: 'You are not authorized to edit this meal' });
+      return res
+        .status(403)
+        .json({ success: false, msg: 'You are not authorized to edit this meal' });
     }
 
     // Validate request body
     const { error, value } = mealSchema.validate(req.body);
     if (error) {
-      return res.status(400).json({ success: false, error: error.details[0].message });
+      return res
+        .status(400)
+        .json({ success: false, error: error.details[0].message });
     }
 
-    const {
-      name,
-      description,
-      price,
-      ingredients,
-      category,
-      cuisine,
-      portionSize,
-      nutritionalInfo,
-      dietaryRestrictions,
-      expirationDate,
-      pickupDeliveryOptions,
-      preparationDate,
-      packagingInformation,
-      healthSafetyCompliance,
-      contactInformation,
-      paymentOptions,
-      preparationMethod,
-      cookingInstructions,
-      additionalNotes,
-      tags,
-      sellerRating,
-      quantityAvailable,
-      discountsPromotions,
-      addressId,
-    } = value;
+    // Process meal data
+    const processedData = processMealData(value);
 
-    let address;
-    if (addressId) {
-      // Find the new address by addressId and ensure it belongs to the user and is not deleted
-      address = await Address.findOne({ _id: addressId, user_id: userId, isDeleted: false });
-      if (!address) {
-        return res.status(404).json({ success: false, error: 'Address not found or has been deleted.' });
-      }
-    } else {
-      // Retain the existing address
-      address = await Address.findById(meal.address);
-      if (!address) {
-        return res.status(404).json({ success: false, msg: 'Associated address not found.' });
-      }
-    }
-
-    // Process fields that can be arrays or comma-separated strings
-    const processedIngredients = Array.isArray(ingredients)
-      ? ingredients
-      : ingredients.split(',').map(item => item.trim()).filter(item => item);
-
-    const processedTags = Array.isArray(tags)
-      ? tags
-      : tags.split(',').map(item => item.trim()).filter(item => item);
-
-    const processedDietaryRestrictions = dietaryRestrictions
-      ? (Array.isArray(dietaryRestrictions)
-          ? dietaryRestrictions
-          : dietaryRestrictions.split(',').map(item => item.trim()).filter(item => item))
-      : [];
-
-    const processedPickupDeliveryOptions = Array.isArray(pickupDeliveryOptions)
-      ? pickupDeliveryOptions
-      : pickupDeliveryOptions.split(',').map(item => item.trim()).filter(item => item);
-
-    const processedPaymentOptions = Array.isArray(paymentOptions)
-      ? paymentOptions
-      : paymentOptions.split(',').map(item => item.trim()).filter(item => item);
-
-    const processedDiscountsPromotions = discountsPromotions
-      ? (Array.isArray(discountsPromotions)
-          ? discountsPromotions
-          : discountsPromotions.split(',').map(item => item.trim()).filter(item => item))
-      : [];
-
-    // Parse nutritionalInfo and contactInformation if they are strings
-    const parsedNutritionalInfo = nutritionalInfo
-      ? {
-          calories: nutritionalInfo.calories || 0,
-          protein: nutritionalInfo.protein || 0,
-          fat: nutritionalInfo.fat || 0,
-          carbs: nutritionalInfo.carbs || 0,
-          vitamins: nutritionalInfo.vitamins
-            ? Array.isArray(nutritionalInfo.vitamins)
-              ? nutritionalInfo.vitamins
-              : nutritionalInfo.vitamins.split(',').map(item => item.trim()).filter(item => item)
-            : [],
-        }
-      : {};
-
-    const parsedContactInformation = contactInformation
-      ? {
-          email: contactInformation.email || '',
-          phone: contactInformation.phone || '',
-        }
-      : {};
+    // Get address
+    const address = await getAddress(value.addressId, userId, meal.address);
 
     // Prepare update data
     const updatedData = {
-      name: name || meal.name,
-      description: description || meal.description,
-      price: price !== undefined ? price : meal.price,
-      ingredients: processedIngredients,
-      category: category || meal.category,
-      cuisine: cuisine || meal.cuisine,
-      portionSize: portionSize || meal.portionSize,
-      nutritionalInfo: parsedNutritionalInfo,
-      dietaryRestrictions: processedDietaryRestrictions,
-      expirationDate: expirationDate || meal.expirationDate,
-      pickupDeliveryOptions: processedPickupDeliveryOptions,
-      preparationDate: preparationDate || meal.preparationDate,
-      packagingInformation,
-      healthSafetyCompliance,
-      contactInformation: parsedContactInformation,
-      paymentOptions: processedPaymentOptions,
-      preparationMethod: preparationMethod || meal.preparationMethod,
-      cookingInstructions: cookingInstructions || meal.cookingInstructions,
-      additionalNotes: additionalNotes || meal.additionalNotes,
-      tags: processedTags,
-      sellerRating: sellerRating ? parseFloat(sellerRating) : meal.sellerRating,
-      quantityAvailable: parseInt(quantityAvailable, 10),
-      discountsPromotions: processedDiscountsPromotions,
+      ...processedData,
       address: address._id,
     };
 
     // Handle images if new images are uploaded
     if (req.files && req.files.length > 0) {
-      // Delete old images from the filesystem to prevent orphaned files
-      meal.images.forEach((imgPath) => {
-        fs.unlink(imgPath, (err) => {
-          if (err) logger.error(`Failed to delete image ${imgPath}: ${err.message}`);
-        });
-      });
+      if (meal.images && meal.images.length > 0) {
+        // Delete old images from the filesystem to prevent orphaned files
+        for (const imgPath of meal.images) {
+          try {
+            await fs.unlink(imgPath);
+          } catch (err) {
+            if (err.code !== 'ENOENT') {
+              logger.error(`Failed to delete image ${imgPath}: ${err.message}`);
+            }
+          }
+        }
+      }
       updatedData.images = req.files.map((file) => file.path);
     }
 
@@ -397,16 +137,18 @@ exports.updateMeal = async (req, res) => {
       { $set: updatedData },
       { new: true, runValidators: true }
     )
-      .populate("createdBy", "full_name email")
-      .populate("address");
+      .populate('createdBy', 'fullName email')
+      .populate('address');
 
     res.json({ success: true, data: updatedMeal });
   } catch (error) {
-    if (error.code === 11000) {
-      // Duplicate key error
-      return res.status(409).json({ success: false, message: 'The updated meal conflicts with an existing meal.' });
-    }
     logger.error(`Error updating meal: ${error.message}`, { stack: error.stack });
+    if (
+      error.message.includes('Address not found') ||
+      error.message.includes('Associated address not found')
+    ) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
     res.status(500).json({ success: false, error: 'Server error' });
   }
 };
@@ -450,20 +192,20 @@ exports.getMeals = async (req, res, next) => {
     if (dietaryRestrictions) {
       const dietaryArray = Array.isArray(dietaryRestrictions)
         ? dietaryRestrictions
-        : dietaryRestrictions.split(',').map(item => item.trim()).filter(item => item);
+        : dietaryRestrictions.split(',').map((item) => item.trim()).filter((item) => item);
       matchConditions.dietaryRestrictions = { $all: dietaryArray };
     }
 
     if (pickupDeliveryOptions) {
       const pickupArray = Array.isArray(pickupDeliveryOptions)
         ? pickupDeliveryOptions
-        : pickupDeliveryOptions.split(',').map(item => item.trim()).filter(item => item);
+        : pickupDeliveryOptions.split(',').map((item) => item.trim()).filter((item) => item);
       matchConditions.pickupDeliveryOptions = { $all: pickupArray };
     }
 
     if (preparedBy) {
       const users = await User.find({
-        full_name: { $regex: preparedBy, $options: 'i' },
+        fullName: { $regex: preparedBy, $options: 'i' },
       }).select('_id');
       const userIds = users.map((user) => user._id);
       matchConditions.createdBy = { $in: userIds };
@@ -476,7 +218,7 @@ exports.getMeals = async (req, res, next) => {
 
     // Geospatial filtering
     if (lat && lng && radius) {
-      const radiusInRadians = parseFloat(radius) / 6378137; // Earth's radius in meters
+      const radiusInRadians = parseFloat(radius) / 6371000; // Correct Earth radius in meters
 
       // Find addresses within the radius
       const addressesWithinRadius = await Address.find({
@@ -490,7 +232,7 @@ exports.getMeals = async (req, res, next) => {
         },
       }).select('_id');
 
-      const addressIds = addressesWithinRadius.map(address => address._id);
+      const addressIds = addressesWithinRadius.map((address) => address._id);
 
       // Add addressIds to matchConditions
       matchConditions.address = { $in: addressIds };
@@ -502,7 +244,7 @@ exports.getMeals = async (req, res, next) => {
 
       // Find addresses matching the criteria
       const addresses = await Address.find(addressMatch).select('_id');
-      const addressIds = addresses.map(address => address._id);
+      const addressIds = addresses.map((address) => address._id);
 
       if (addressIds.length > 0) {
         matchConditions.address = { $in: addressIds };
@@ -583,7 +325,7 @@ exports.getMeals = async (req, res, next) => {
         images: 1,
         createdBy: {
           _id: '$createdByDetails._id',
-          full_name: '$createdByDetails.full_name',
+          fullName: '$createdByDetails.fullName',
           email: '$createdByDetails.email',
         },
         address: '$addressDetails',
@@ -591,33 +333,32 @@ exports.getMeals = async (req, res, next) => {
     });
 
     // Pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    pipeline.push({ $skip: skip });
-    pipeline.push({ $limit: parseInt(limit) });
+    const parsedPage = parseInt(page, 10) || 1;
+    const parsedLimit = parseInt(limit, 10) || 10;
+    const skip = (parsedPage - 1) * parsedLimit;
 
-    // Execute aggregation
-    const meals = await Meal.aggregate(pipeline);
-
-    // Get total count for pagination
-    const totalPipeline = [...pipeline];
-    // Remove pagination stages
-    totalPipeline.pop(); // $limit
-    totalPipeline.pop(); // $skip
-    // Add a count stage
-    totalPipeline.push({
-      $count: 'total',
+    // Add $facet stage for pagination and total count
+    pipeline.push({
+      $facet: {
+        data: [{ $skip: skip }, { $limit: parsedLimit }],
+        totalCount: [{ $count: 'count' }],
+      },
     });
-    const totalResult = await Meal.aggregate(totalPipeline);
-    const total = totalResult[0] ? totalResult[0].total : 0;
-    const totalPages = Math.ceil(total / parseInt(limit));
+
+    // Execute aggregation pipeline
+    const result = await Meal.aggregate(pipeline);
+
+    const meals = result[0].data;
+    const total = result[0].totalCount[0]?.count || 0;
+    const totalPages = Math.ceil(total / parsedLimit);
 
     res.json({
       success: true,
       data: meals,
       pagination: {
         total,
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: parsedPage,
+        limit: parsedLimit,
         totalPages,
       },
     });
@@ -633,7 +374,7 @@ exports.getMeals = async (req, res, next) => {
 exports.getMealById = async (req, res) => {
   try {
     const meal = await Meal.findById(req.params.id)
-      .populate('createdBy', 'full_name email _id') // Include _id for user identification
+      .populate('createdBy', 'fullName email _id') // Include _id for user identification
       .populate({
         path: 'address',
         select: 'formattedAddress location', // Select necessary address fields
@@ -657,7 +398,7 @@ exports.getMealById = async (req, res) => {
 exports.getUserMeals = async (req, res) => {
   try {
     const meals = await Meal.find({ createdBy: req.user._id })
-      .populate("createdBy", "full_name email")
+      .populate('createdBy', 'fullName email')
       .populate('address')
       .exec();
 
@@ -691,7 +432,9 @@ exports.getFilterOptions = async (req, res) => {
     });
   } catch (error) {
     logger.error(`Error fetching filter options: ${error.message}`, { stack: error.stack });
-    res.status(500).json({ success: false, error: 'Failed to fetch filter options' });
+    res
+      .status(500)
+      .json({ success: false, error: 'Failed to fetch filter options' });
   }
 };
 
@@ -710,13 +453,17 @@ exports.deleteMeal = async (req, res) => {
     }
 
     // Delete associated images from the filesystem
-    meal.images.forEach((imgPath) => {
-      fs.unlink(imgPath, (err) => {
-        if (err) {
-          logger.error(`Failed to delete image ${imgPath}: ${err.message}`);
+    if (meal.images && meal.images.length > 0) {
+      for (const imgPath of meal.images) {
+        try {
+          await fs.unlink(imgPath);
+        } catch (err) {
+          if (err.code !== 'ENOENT') {
+            logger.error(`Failed to delete image ${imgPath}: ${err.message}`);
+          }
         }
-      });
-    });
+      }
+    }
 
     res.json({ success: true, msg: 'Meal deleted successfully' });
   } catch (error) {

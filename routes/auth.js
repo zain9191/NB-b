@@ -1,12 +1,13 @@
 // routes/auth.js
-
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
-const User = require('../models/User');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { registerUser, loginUser, becomeChef, getUserProfile } = require('../controllers/userController');
+const {
+  registerUser,
+  loginUser,
+  becomeChef,
+  getUserProfile,
+} = require('../controllers/userController');
 
 // GET /api/auth - Fetch the authenticated user's details
 router.get('/', auth, getUserProfile);
@@ -19,6 +20,5 @@ router.post('/login', loginUser);
 
 // Become a chef route
 router.post('/become-chef', auth, becomeChef);
-
 
 module.exports = router;

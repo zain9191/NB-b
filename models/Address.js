@@ -3,16 +3,17 @@ const mongoose = require('mongoose');
 
 const AddressSchema = new mongoose.Schema(
   {
-    user_id: {
+    userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
+      index: true,
     },
     street: { type: String, required: true },
-    city: { type: String, required: true },
-    state: { type: String }, // Optional
-    postalCode: { type: String }, // Optional
-    country: { type: String, required: true },
+    city: { type: String, required: true, index: true },
+    state: { type: String },
+    postalCode: { type: String },
+    country: { type: String, required: true, index: true },
     formattedAddress: { type: String },
     location: {
       type: {
@@ -22,11 +23,11 @@ const AddressSchema = new mongoose.Schema(
         default: 'Point',
       },
       coordinates: {
-        type: [Number], // [longitude, latitude]
+        type: [Number],
         required: true,
       },
     },
-    isDeleted: { type: Boolean, default: false }, // Newly added field
+    isDeleted: { type: Boolean, default: false },
   },
   {
     timestamps: true,

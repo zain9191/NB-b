@@ -10,7 +10,7 @@ module.exports = (err, req, res, next) => {
   res.status(500).json({
     success: false,
     error: err.message,
-    stack: process.env.NODE_ENV === 'production' ? null : err.stack,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : null,
   });
 
   console.log('Error response sent to client');
