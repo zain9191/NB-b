@@ -33,8 +33,32 @@ const logger = winston.createLogger({
 /**
  * Create a new meal
  */
+
 exports.createMeal = async (req, res) => {
   try {
+    // Parse JSON fields if they are strings
+    if (typeof req.body.nutritionalInfo === 'string') {
+      try {
+        req.body.nutritionalInfo = JSON.parse(req.body.nutritionalInfo);
+      } catch (parseError) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid JSON format in nutritionalInfo.',
+        });
+      }
+    }
+
+    if (typeof req.body.contactInformation === 'string') {
+      try {
+        req.body.contactInformation = JSON.parse(req.body.contactInformation);
+      } catch (parseError) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid JSON format in contactInformation.',
+        });
+      }
+    }
+
     // Validate request body
     const { error, value } = mealSchema.validate(req.body);
     if (error) {
@@ -63,15 +87,19 @@ exports.createMeal = async (req, res) => {
     res.status(201).json({ success: true, data: meal });
   } catch (error) {
     logger.error(`Error creating meal: ${error.message}`, { stack: error.stack });
-    if (
-      error.message.includes('Address not found') ||
-      error.message.includes('Active address not set')
-    ) {
-      return res.status(400).json({ success: false, error: error.message });
+
+    // Handle JSON parsing errors
+    if (error instanceof SyntaxError && error.message.includes('JSON')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid JSON format in nutritionalInfo or contactInformation.',
+      });
     }
+
     res.status(500).json({ success: false, error: 'Server error' });
   }
 };
+
 
 /**
  * Update an existing meal
@@ -81,43 +109,94 @@ exports.updateMeal = async (req, res) => {
   const userId = req.user._id;
 
   try {
-    // Find the meal by ID
-    const meal = await Meal.findById(mealId);
-    if (!meal) {
-      return res.status(404).json({ success: false, msg: 'Meal not found' });
+     if (typeof req.body.nutritionalInfo === 'string') {
+      req.body.nutritionalInfo = JSON.parse(req.body.nutritionalInfo);
     }
-
-    // Check if the authenticated user is the creator of the meal
-    if (meal.createdBy.toString() !== userId.toString()) {
-      return res
-        .status(403)
-        .json({ success: false, msg: 'You are not authorized to edit this meal' });
+    if (typeof req.body.contactInformation === 'string') {
+      req.body.contactInformation = JSON.parse(req.body.contactInformation);
     }
 
     // Validate request body
     const { error, value } = mealSchema.validate(req.body);
     if (error) {
-      return res
-        .status(400)
-        .json({ success: false, error: error.details[0].message });
+      return res.status(400).json({ success: false, error: error.details[0].message });
     }
 
-    // Process meal data
-    const processedData = processMealData(value);
+    const {
+      name,
+      description,
+      price,
+      ingredients,
+      category,
+      cuisine,
+      portionSize,
+      nutritionalInfo,
+      dietaryRestrictions,
+      expirationDate,
+      pickupDeliveryOptions,
+      preparationDate,
+      packagingInformation,
+      healthSafetyCompliance,
+      contactInformation,
+      paymentOptions,
+      preparationMethod,
+      cookingInstructions,
+      additionalNotes,
+      tags,
+      sellerRating,
+      quantityAvailable,
+      discountsPromotions,
+       addressId,
+    } = value;
 
-    // Get address
-    const address = await getAddress(value.addressId, userId, meal.address);
+    // Find the meal to update
+    let meal = await Meal.findOne({ _id: mealId, createdBy: userId });
+    if (!meal) {
+      return res.status(404).json({ success: false, msg: 'Meal not found.' });
+    }
 
-    // Prepare update data
-    const updatedData = {
-      ...processedData,
-      address: address._id,
-    };
+    // Update meal fields
+    meal.name = name;
+    meal.description = description;
+    meal.price = price;
+    meal.ingredients = ingredients.split(',').map(item => item.trim());
+    meal.category = category;
+    meal.cuisine = cuisine;
+    meal.portionSize = portionSize;
+    meal.nutritionalInfo = nutritionalInfo;
+    meal.dietaryRestrictions = dietaryRestrictions ? dietaryRestrictions.split(',').map(item => item.trim()) : [];
+    meal.expirationDate = new Date(expirationDate);
+    meal.pickupDeliveryOptions = pickupDeliveryOptions.split(',').map(item => item.trim());
+    meal.preparationDate = new Date(preparationDate);
+    meal.packagingInformation = packagingInformation;
+    meal.healthSafetyCompliance = healthSafetyCompliance;
+    meal.contactInformation = contactInformation;
+    meal.paymentOptions = paymentOptions.split(',').map(item => item.trim());
+    meal.preparationMethod = preparationMethod;
+    meal.cookingInstructions = cookingInstructions;
+    meal.additionalNotes = additionalNotes;
+    meal.tags = tags ? tags.split(',').map(item => item.trim()) : [];
+    meal.sellerRating = sellerRating;
+    meal.quantityAvailable = quantityAvailable;
+    meal.discountsPromotions = discountsPromotions ? discountsPromotions.split(',').map(item => item.trim()) : [];
 
-    // Handle images if new images are uploaded
+    // Handle address update if addressId is provided
+    if (addressId) {
+      const address = await Address.findOne({ _id: addressId, userId: userId, isDeleted: false });
+      if (!address) {
+        return res.status(400).json({ success: false, error: 'Invalid address ID.' });
+      }
+      meal.address = addressId;
+      meal.location = {
+        type: 'Point',
+        coordinates: [address.location.coordinates[0], address.location.coordinates[1]],
+      };
+    }
+
+    // Handle image uploads if any
     if (req.files && req.files.length > 0) {
+      // Optionally delete old images from filesystem
       if (meal.images && meal.images.length > 0) {
-        // Delete old images from the filesystem to prevent orphaned files
         for (const imgPath of meal.images) {
           try {
             await fs.unlink(imgPath);
@@ -128,30 +207,20 @@ exports.updateMeal = async (req, res) => {
           }
         }
       }
-      updatedData.images = req.files.map((file) => file.path);
+      // Assign new image paths
+      meal.images = req.files.map(file => file.path);
     }
 
-    // Update the meal in the database
-    const updatedMeal = await Meal.findByIdAndUpdate(
-      mealId,
-      { $set: updatedData },
-      { new: true, runValidators: true }
-    )
-      .populate('createdBy', 'fullName email')
-      .populate('address');
+    // Save the updated meal
+    await meal.save();
 
-    res.json({ success: true, data: updatedMeal });
+    res.status(200).json({ success: true, data: meal });
   } catch (error) {
     logger.error(`Error updating meal: ${error.message}`, { stack: error.stack });
-    if (
-      error.message.includes('Address not found') ||
-      error.message.includes('Associated address not found')
-    ) {
-      return res.status(400).json({ success: false, error: error.message });
-    }
     res.status(500).json({ success: false, error: 'Server error' });
   }
 };
+
 
 /**
  * Get all meals with filtering and pagination
@@ -412,13 +481,34 @@ exports.getUserMeals = async (req, res) => {
 /**
  * Get filter options for categories, cuisines, etc.
  */
+// controllers/mealController.js
+
 exports.getFilterOptions = async (req, res) => {
   try {
     const categories = await Meal.distinct('category');
     const cuisines = await Meal.distinct('cuisine');
-    const dietaryRestrictions = await Meal.distinct('dietaryRestrictions');
-    const pickupDeliveryOptions = await Meal.distinct('pickupDeliveryOptions');
-    const paymentOptions = await Meal.distinct('paymentOptions');
+
+    // For array fields, use aggregation pipeline
+    const dietaryRestrictionsResult = await Meal.aggregate([
+      { $unwind: '$dietaryRestrictions' },
+      { $group: { _id: null, values: { $addToSet: '$dietaryRestrictions' } } }
+    ]);
+
+    const dietaryRestrictions = dietaryRestrictionsResult[0]?.values || [];
+
+    const pickupDeliveryOptionsResult = await Meal.aggregate([
+      { $unwind: '$pickupDeliveryOptions' },
+      { $group: { _id: null, values: { $addToSet: '$pickupDeliveryOptions' } } }
+    ]);
+
+    const pickupDeliveryOptions = pickupDeliveryOptionsResult[0]?.values || [];
+
+    const paymentOptionsResult = await Meal.aggregate([
+      { $unwind: '$paymentOptions' },
+      { $group: { _id: null, values: { $addToSet: '$paymentOptions' } } }
+    ]);
+
+    const paymentOptions = paymentOptionsResult[0]?.values || [];
 
     res.json({
       success: true,
@@ -431,12 +521,14 @@ exports.getFilterOptions = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error(`Error fetching filter options: ${error.message}`);
+    console.error(error); // This will log the full error object
     logger.error(`Error fetching filter options: ${error.message}`, { stack: error.stack });
-    res
-      .status(500)
-      .json({ success: false, error: 'Failed to fetch filter options' });
+    res.status(500).json({ success: false, error: 'Failed to fetch filter options' });
   }
 };
+
+
 
 /**
  * Delete a meal (Hard Delete)

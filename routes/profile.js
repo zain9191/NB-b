@@ -1,10 +1,11 @@
- 
+// routes/profile.js
+
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs').promises;  
+const fs = require('fs').promises;
 const User = require('../models/User');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -16,12 +17,12 @@ const uploadsDir = path.join(__dirname, '..', 'uploads');
 const ensureUploadsDir = async () => {
   try {
     await fs.mkdir(uploadsDir, { recursive: true });
+    console.log(`Uploads directory ensured at ${uploadsDir}`);
   } catch (err) {
     console.error('Error creating uploads directory:', err.message);
-    process.exit(1);  
+    process.exit(1); // Exit the application if uploads directory cannot be created
   }
 };
-
 
 // Invoke the function to ensure uploads directory exists
 ensureUploadsDir();
@@ -32,14 +33,15 @@ const storage = multer.diskStorage({
     cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     cb(null, `profilePicture-${uniqueSuffix}${path.extname(file.originalname)}`);
   },
 });
 
+// Multer upload instance with file size and type restrictions
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 1024 * 1024 * 5 },  
+  limits: { fileSize: 1024 * 1024 * 5 }, // 5MB limit
   fileFilter: (req, file, cb) => {
     const fileTypes = /jpeg|jpg|png/;
     const extname = fileTypes.test(path.extname(file.originalname).toLowerCase());
@@ -62,11 +64,16 @@ router.use(
   })
 );
 
-// Upload Profile Picture Route
+/**
+ * @route   POST /upload-profile-picture
+ * @desc    Upload and update user's profile picture
+ * @access  Private
+ */
 router.post('/upload-profile-picture', auth, (req, res) => {
   upload(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
-       console.error('Multer error:', err.message);
+      // Handle Multer-specific errors
+      console.error('Multer error:', err.message);
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ msg: 'File size exceeds 5MB limit.' });
       } else if (err.code === 'LIMIT_UNEXPECTED_FILE') {
@@ -74,48 +81,74 @@ router.post('/upload-profile-picture', auth, (req, res) => {
       }
       return res.status(400).json({ msg: 'File upload error.' });
     } else if (err) {
-       console.error('Error uploading file:', err.message);
+      // Handle unknown errors
+      console.error('Unknown error uploading file:', err.message);
       return res.status(500).json({ msg: 'Server error during file upload.' });
     }
 
     try {
-       const user = await User.findById(req.user._id);
+      const userId = req.user._id;
+
+      // Fetch the current user to get existing profilePicture
+      const user = await User.findById(userId).select('profilePicture');
       if (!user) {
+        console.error('User not found:', userId);
         return res.status(404).json({ msg: 'User not found' });
       }
 
-       if (user.profilePicture && user.profilePicture !== '/uploads/default-pp.png') {
+      // Delete old profile picture if it's not the default one
+      if (user.profilePicture && user.profilePicture !== 'uploads/default-pp.png') {
         const oldPath = path.join(__dirname, '..', user.profilePicture);
         try {
           await fs.unlink(oldPath);
           console.log(`Deleted old profile picture at ${oldPath}`);
         } catch (unlinkErr) {
-          console.error('Error deleting old profile picture:', unlinkErr.message);
-         }
+          if (unlinkErr.code !== 'ENOENT') {
+            console.error('Error deleting old profile picture:', unlinkErr.message);
+          } else {
+            console.warn(`Old profile picture not found at ${oldPath}`);
+          }
+        }
       }
 
-       user.profilePicture = req.file
-        ? `/uploads/${req.file.filename}`
-        : '/uploads/default-pp.png';
-      await user.save();
+      // Determine the new profile picture path
+      const newProfilePicture = req.file
+        ? `uploads/${req.file.filename}`
+        : 'uploads/default-pp.png';
 
-       res.json({
+      // Update the profilePicture field using findByIdAndUpdate
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { profilePicture: newProfilePicture },
+        { new: true, select: '_id fullName email profilePicture' }
+      );
+
+      if (!updatedUser) {
+        console.error('User not found during update:', userId);
+        return res.status(404).json({ msg: 'User not found' });
+      }
+
+      res.json({
         msg: 'Profile picture updated successfully.',
         user: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          profilePicture: user.profilePicture,
-         },
+          _id: updatedUser._id,
+          fullName: updatedUser.fullName,
+          email: updatedUser.email,
+          profilePicture: updatedUser.profilePicture,
+        },
       });
     } catch (saveErr) {
-      console.error('Error saving user profile picture:', saveErr.message);
+      console.error('Error saving user profile picture:', saveErr);
       res.status(500).json({ msg: 'Server error while updating profile picture.' });
     }
   });
 });
 
-// Get User Profile Route
+/**
+ * @route   GET /
+ * @desc    Fetch the authenticated user's profile
+ * @access  Private
+ */
 router.get('/', auth, async (req, res) => {
   try {
     console.log('Fetching user profile...');
@@ -132,28 +165,34 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// Change Password Route
+/**
+ * @route   PUT /change-password
+ * @desc    Change the authenticated user's password
+ * @access  Private
+ */
 router.put('/change-password', auth, async (req, res) => {
   try {
     const userId = req.user._id;
     const { currentPassword, newPassword } = req.body;
 
-     if (!currentPassword || !newPassword) {
+    // Validate input
+    if (!currentPassword || !newPassword) {
       return res.status(400).json({ msg: 'Please provide both current and new passwords.' });
     }
 
- 
+    // Fetch the user by ID
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ msg: 'User not found.' });
     }
 
+    // Compare current password
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
       return res.status(400).json({ msg: 'Current password is incorrect.' });
     }
 
- 
+    // Hash the new password
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
     await user.save();
